@@ -7,27 +7,16 @@
 
 library(dplyr)
 library(RColorBrewer)
+library(ggplot2)
 
 # this function documents how the exclusions affected each year of the register
-generate_year_counts = function(dat,show) {
-        if(exists("year_matrix")) {
-                tbl = table(dat$AR)
-                tmp = data.frame(year=names(tbl),rows=as.numeric(tbl),stringsAsFactors = F)
-                tbl = table(dat$AR)
-                year_matrix = merge(year_matrix,tmp,by="year",all=T)
-                year_matrix = year_matrix[order(year_matrix$year),]
-                colnames(year_matrix)[-1] = paste("step",seq(length(colnames(year_matrix))-1),sep="")
-        } else {
-                tbl = table(dat$AR)
-                year_matrix = data.frame(year=names(tbl),rows=as.numeric(tbl),stringsAsFactors = F)       
-        }
-        year_matrix <<- year_matrix # global assignment
-        if(show==TRUE) return(year_matrix)
+generate_year_counts = function(dat, stage, show) {
+        year_matrix_current = group_by(dat, AR) %>% summarize(rows=n())
+        if(show) print(year_matrix_current)
+        
+        year_matrix_current$stage = stage
+        year_matrix <<- bind_rows(year_matrix, year_matrix_current)
 }
-# run this function once BEFORE before cleaning the data, and then after each cleaning step
-# if(exists("year_matrix")==TRUE) rm(year_matrix)
-# generate_year_counts(dat,show=T)
-
 
 # duplicated, missing or nonsensical maternal IDs
 fun_momID = function(dat) {
@@ -42,6 +31,8 @@ fun_momID = function(dat) {
         print(table(substr(dat$lpnr_mor,1,1),useNA="a"))
         cat("
             - before: ",n_row_before,", after: ",n_row_after,", removed: ",n_row_before-n_row_after,sep="")
+        
+        generate_year_counts(dat, "momID", F)
         dat
 }
 
@@ -53,54 +44,56 @@ fun_kidID = function(dat) {
 }
 
 fun_momkidID = function(dat) {
-# extract subsets of the dataset to be pruned and merged later
-tmp0 = dat[which( (!is.na(dat$lpnr_BARN)) & (!is.na(dat$lpnr_mor))),] # both mom and child have PersNumb
-tmp1 = dat[which( (is.na(dat$lpnr_BARN)) | (is.na(dat$lpnr_mor))),] # at lest one does not have PersNumb
-
-#  mother and child pair was entered twice:
-morbar_unqcode = paste(tmp0$lpnr_BARN,tmp0$lpnr_mor,sep="_") # unique code for mother-child pair
-dpl_codes = unique(morbar_unqcode[which(duplicated(morbar_unqcode))]) # codes that are duplicated
-dpl_rows = which(morbar_unqcode %in% dpl_codes) # rows that contain duplicated pairs
-unq_rows = which(! morbar_unqcode %in% dpl_codes) # rows that contain duplicated pairs
-
-cat("MOM-CHILD:
+        # extract subsets of the dataset to be pruned and merged later
+        tmp0 = dat[which( (!is.na(dat$lpnr_BARN)) & (!is.na(dat$lpnr_mor))),] # both mom and child have PersNumb
+        tmp1 = dat[which( (is.na(dat$lpnr_BARN)) | (is.na(dat$lpnr_mor))),] # at lest one does not have PersNumb
+        
+        #  mother and child pair was entered twice:
+        morbar_unqcode = paste(tmp0$lpnr_BARN,tmp0$lpnr_mor,sep="_") # unique code for mother-child pair
+        dpl_codes = unique(morbar_unqcode[which(duplicated(morbar_unqcode))]) # codes that are duplicated
+        dpl_rows = which(morbar_unqcode %in% dpl_codes) # rows that contain duplicated pairs
+        unq_rows = which(! morbar_unqcode %in% dpl_codes) # rows that contain duplicated pairs
+        
+        cat("MOM-CHILD:
 - observed number of mother-fetus pairs (rows):", nrow(dat),"
 - number of pairs (rows) where child has no ID (deadborn):", sum(is.na(dat$lpnr_BARN)),"
 - number of pairs (rows) where mother has no ID:", sum(is.na(dat$lpnr_mor)),"
 - number of mother-fetus pairs, where both have non-missing personal numbers:", nrow(tmp0),"
 - number of unique mom-child pairs that are entered more than once:", length(dpl_codes))
-
-# extract subsets of the dataset to be pruned and merged later
-tmp0_dpl = tmp0[dpl_rows,] # duplicated mother-child pairs
-tmp0_unq = tmp0[unq_rows,] # unique mother-child pairs
-
-# which columns should be used when determining which individuals/pairs should be kept
-cols_to_use = which(colnames(tmp0_dpl) %in% c("AR","MLANGD","GRDBS","MFODLAND","PARITET","MALDER","lpnr_BARN","lpnr_mor"))
-
-cat("
+        
+        # extract subsets of the dataset to be pruned and merged later
+        tmp0_dpl = tmp0[dpl_rows,] # duplicated mother-child pairs
+        tmp0_unq = tmp0[unq_rows,] # unique mother-child pairs
+        
+        # which columns should be used when determining which individuals/pairs should be kept
+        cols_to_use = which(colnames(tmp0_dpl) %in% c("AR","MLANGD","GRDBS","MFODLAND","PARITET","MALDER","lpnr_BARN","lpnr_mor"))
+        
+        cat("
     running pruning scipt which leaves only one row per mom-child pair: the row with most info")
-
-recovered = NULL
-for (b_id in unique(tmp0_dpl$lpnr_BARN)) {
-        sub = tmp0_dpl[which(tmp0_dpl$lpnr_BARN==b_id),] 
-        sub = sub[which((!is.na(sub$MLANGD))&(!is.na(sub$GRDBS))),] # strictly must be present
-        ix = apply(sub[,cols_to_use],1,function(x) sum((is.na(x))|(x=="")))
-        ix = which(ix == min(ix))
-        if (length(ix)>1) ix = sample(ix,1)
-        recovered = rbind(recovered,sub[ix,])
-}
-tmp = rbind(tmp0_unq,recovered,tmp1)
-tmp = tmp[sample(nrow(tmp),replace=F),]
-cat("
+        
+        recovered = NULL
+        for (b_id in unique(tmp0_dpl$lpnr_BARN)) {
+                sub = tmp0_dpl[which(tmp0_dpl$lpnr_BARN==b_id),] 
+                sub = sub[which((!is.na(sub$MLANGD))&(!is.na(sub$GRDBS))),] # strictly must be present
+                ix = apply(sub[,cols_to_use],1,function(x) sum((is.na(x))|(x=="")))
+                ix = which(ix == min(ix))
+                if (length(ix)>1) ix = sample(ix,1)
+                recovered = rbind(recovered,sub[ix,])
+        }
+        tmp = rbind(tmp0_unq,recovered,tmp1)
+        tmp = tmp[sample(nrow(tmp),replace=F),]
+        cat("
     number of remaining rows = ",nrow(tmp)) # remaining 4 073 790
-tmp
+        
+        generate_year_counts(tmp, "momkidID", F)
+        tmp
 }
 
 fun_multipregs = function(dat) {
         # TWINS/multiplets should be removed first, only then remove covar-missing individuals
         # I will (ambiguously) use the same-YEAR-of delivery as an indicator for MULTIPREG pregnancy
         
-cat("MULTIPREGS:
+        cat("MULTIPREGS:
     twins,triplets etc will be determined using two methods:
     1) based on motherID-PregYear duplicates
     2) based on BORDF2 and BORDNRF2 variables        
@@ -108,113 +101,117 @@ cat("MULTIPREGS:
 values for variable Year (first character in value fied):
 ")
         print(table(substr(dat$AR,1,1),useNA="a"))
-
-
-momYear_code = paste(dat$AR,dat$lpnr_mor,sep="_") # same order as in "dat" !
-multipreg_indic = sort(unique(momYear_code[duplicated(momYear_code)]))
-dat$multiplet = 0
-dat$multiplet[which(momYear_code %in% multipreg_indic)]=1
-rm(momYear_code, multipreg_indic)
-
-cat("
+        
+        
+        momYear_code = paste(dat$AR,dat$lpnr_mor,sep="_") # same order as in "dat" !
+        multipreg_indic = sort(unique(momYear_code[duplicated(momYear_code)]))
+        dat$multiplet = 0
+        dat$multiplet[which(momYear_code %in% multipreg_indic)]=1
+        rm(momYear_code, multipreg_indic)
+        
+        cat("
 concordance between inferred and declared multiplet status:
 ")
-print(table(declared=dat$BORDF2,inferred=dat$multiplet,useNA="a"))
-
-#table(dat$BORDF2,dat$BORDNRF2,useNA="a")
-#table(dat$BORDNRF2,useNA="a")
-#table(dat$BORDF2,useNA="a")
-
-good_rix = which((dat$multiplet==0)&(dat$BORDF2==1)&(is.na(dat$BORDNRF2))) # non-twins (singletons)
-bad_rix = which((dat$multiplet==1)|(dat$BORDF2==2)|(!is.na(dat$BORDNRF2))) # warning with NAs! ***
-length(bad_rix) # report
-length(good_rix) # report
-mean(dat$GRDBS[ bad_rix],na.rm=T)  # report
-mean(dat$GRDBS[good_rix],na.rm=T)  # report
-
-cat("
+        print(table(declared=dat$BORDF2,inferred=dat$multiplet,useNA="a"))
+        
+        #table(dat$BORDF2,dat$BORDNRF2,useNA="a")
+        #table(dat$BORDNRF2,useNA="a")
+        #table(dat$BORDF2,useNA="a")
+        
+        good_rix = which((dat$multiplet==0)&(dat$BORDF2==1)&(is.na(dat$BORDNRF2))) # non-twins (singletons)
+        bad_rix = which((dat$multiplet==1)|(dat$BORDF2==2)|(!is.na(dat$BORDNRF2))) # warning with NAs! ***
+        length(bad_rix) # report
+        length(good_rix) # report
+        mean(dat$GRDBS[ bad_rix],na.rm=T)  # report
+        mean(dat$GRDBS[good_rix],na.rm=T)  # report
+        
+        cat("
 number of twin/triplet+ mom-child pairs (rows) removed: ",length(bad_rix),"
 number of singleton children (rows) remaining: ",length(good_rix)) # should be 3 971 491 remaining
-
-# remove multipregs
-dat = dat[good_rix,]
-rm(good_rix,bad_rix)
-
-dat
+        
+        # remove multipregs
+        dat = dat[good_rix,]
+        rm(good_rix,bad_rix)
+        
+        generate_year_counts(dat, "multipregs", F)
+        dat
 }
 
 fun_deadborn = function(dat) {
-cat("DEADBORN:
+        cat("DEADBORN:
     remove stillbirths based on variable DODFOD and childID missingness.
 
 concordance of childID missingness with DODFOD variable values:
 ")
-print(table(IDisNA=is.na(dat$lpnr_BARN),DODFOD=dat$DODFOD,useNA = "a"))
-cat("
+        print(table(IDisNA=is.na(dat$lpnr_BARN),DODFOD=dat$DODFOD,useNA = "a"))
+        cat("
     (DODFOD: 1 = dies before delivery, 2 = dies during delivery)")
-
-#table(dat$DODFOD) # 1= dies before delivery, 2= during delivery
-
-good_rix = which((is.na(dat$DODFOD))&(!is.na(dat$lpnr_BARN)))
-dat = dat[good_rix,]  
-
-cat("
+        
+        #table(dat$DODFOD) # 1= dies before delivery, 2= during delivery
+        
+        good_rix = which((is.na(dat$DODFOD))&(!is.na(dat$lpnr_BARN)))
+        dat = dat[good_rix,]  
+        
+        cat("
 number of rows remaining = ", nrow(dat)) 
-dat 
+        
+        generate_year_counts(dat, "deadborn", F)
+        dat 
 }
 
 fun_matPrecond = function(dat) {
-cat("MATERNAL PRECONDITIONS
+                cat("MATERNAL PRECONDITIONS
     exclude pregnancies where mother has an ongoing medical condition,
     which is found in one of the MFR's special columns
     ")
-
-preconditions = c("NJURSJUK","DIABETES","EPILEPSI","ULCOLIT","SLE","HYPERTON") # left unused: "URINVINF", "ASTMA"
-
-# estimate prevalence of each condition, as well as effect size on GestAge
-tbl = NULL
-for (colname in preconditions) {
-        precond = as.numeric(!is.na(dat[,colname]))
-        n_ill = sum(precond==1)
-        coefs = coef(summary(lm(dat$GRDBS ~ precond)))
-        df = data.frame(condition=colname,N=n_ill,beta=coefs[2,1],pval=coefs[2,4])
-        tbl = rbind(tbl,df)
-        rm(df,precond,n_ill,coefs)
-}
-
-# add  PREVIOUS C-SECTION
-table(dat$TSECTIO,useNA="a")
-precond = rep(0,nrow(dat))
-precond[which(dat$TSECTIO==1)] = 1  # note, some previous CS might still remain (missing data)
-coefs = coef(summary(lm(dat$GRDBS ~ precond))); coefs
-df = data.frame(condition="TSECTIO",N=sum(precond==1),beta=coefs[2,1],pval=coefs[2,4])
-tbl = rbind(tbl,df); rm(df)
-
-cat("
+                
+                preconditions = c("NJURSJUK","DIABETES","EPILEPSI","ULCOLIT","SLE","HYPERTON") # left unused: "URINVINF", "ASTMA"
+                
+                # estimate prevalence of each condition, as well as effect size on GestAge
+                tbl = NULL
+                for (colname in preconditions) {
+                        precond = as.numeric(!is.na(dat[,colname]))
+                        n_ill = sum(precond==1)
+                        coefs = coef(summary(lm(dat$GRDBS ~ precond)))
+                        df = data.frame(condition=colname,N=n_ill,beta=coefs[2,1],pval=coefs[2,4])
+                        tbl = rbind(tbl,df)
+                        rm(df,precond,n_ill,coefs)
+                }
+                
+                # add  PREVIOUS C-SECTION
+                table(dat$TSECTIO,useNA="a")
+                precond = rep(0,nrow(dat))
+                precond[which(dat$TSECTIO==1)] = 1  # note, some previous CS might still remain (missing data)
+                coefs = coef(summary(lm(dat$GRDBS ~ precond))); coefs
+                df = data.frame(condition="TSECTIO",N=sum(precond==1),beta=coefs[2,1],pval=coefs[2,4])
+                tbl = rbind(tbl,df); rm(df)
+                
+                cat("
     pregnancies with the following maternal medical conditions will be excluded from the MFR:
     ")
-print(tbl)
-cat("(beta and pval are estimated as an effect on gestational age)
+                print(tbl)
+                cat("(beta and pval are estimated as an effect on gestational age)
     ")
-
-
-
-# remove all pregnancies with preconditions from the data
-sub = dat[,preconditions]; sub$prevCS = NA; sub$prevCS[which(precond==1)] = 1
-bad_rows = apply(sub,1,function(x) sum(!is.na(x))); table(bad_rows); sum(bad_rows>0)
-
-cat("
+                
+                
+                
+                # remove all pregnancies with preconditions from the data
+                sub = dat[,preconditions]; sub$prevCS = NA; sub$prevCS[which(precond==1)] = 1
+                bad_rows = apply(sub,1,function(x) sum(!is.na(x))); table(bad_rows); sum(bad_rows>0)
+                
+                cat("
     number of pregnancies with a specific number of maternal medical conditions:
     ")
-print(table(bad_rows))
-
-dat = dat[which(bad_rows==0),]; dim(dat) 
-
-cat("
+                print(table(bad_rows))
+                
+                dat = dat[which(bad_rows==0),]; dim(dat) 
+                
+                cat("
 number of rows selected for exclusion:", sum(bad_rows>0),"
 number of rows remaining:",nrow(dat))
-
-dat
+                
+                generate_year_counts(dat, "matPrecond", F)
+                dat
 }
 
 fun_spont1990 = function(dat) {
@@ -256,7 +253,9 @@ fun_spont1990 = function(dat) {
             - when AR<1990 and FLINDUKT is missing and FLSPONT is missing;
             ")
         
-        dat[good_rix,]
+        dat = dat[good_rix,]
+        generate_year_counts(dat, "spont1990", F)
+        dat
 }
 
 fun_CSections = function(dat) {
@@ -281,8 +280,9 @@ fun_CSections = function(dat) {
         cat("\n in total ",length(bad_rows)," rows will be removed \n")        
         cat("\n in total ",nrow(dat)," are remaining \n")        
         dat = dat[-bad_rows,]
-        dat
         
+        generate_year_counts(dat, "CSections", F)
+        dat
 }
 
 fun_ICDcodes = function(dat) {
@@ -329,6 +329,8 @@ fun_ICDcodes = function(dat) {
         cat(" in total ",length(rixs), " will be removed") # selected for exclusion : 67 272
         dat = dat[-rixs,]
         cat(" there are ",nrow(dat), " rows remaining") 
+        
+        generate_year_counts(dat, "ICDcodes", F)
         dat
 }
 
@@ -339,6 +341,8 @@ fun_GAmiss = function(dat) {
         cat("in total ",nrow(dat)-length(good_rows),"rows will be removed")
         dat = dat[good_rows,]
         cat("in total ",nrow(dat),"left remaining")
+        
+        generate_year_counts(dat, "GAmiss", F)
         dat
 }
 
@@ -349,6 +353,8 @@ fun_GAdating = function(dat) {
         cat("in total ",length(bad_rows),"rows will be removed")
         dat = dat[-bad_rows,]
         cat("in total ",nrow(dat),"left remaining")
+        
+        generate_year_counts(dat, "GAdating", F)
         dat
 }
 
@@ -376,6 +382,7 @@ fun_MHmiss = function(dat) {
         cat(" - range of remaining maternal height: ",paste(range(dat$MLANGD,na.rm=T),collapse="-"),"cm
             ")
         
+        generate_year_counts(dat, "MHmiss", F)
         dat
 }
 
@@ -400,11 +407,14 @@ fun_very_nordic = function(dat) {
         
         cat("\t in total",length(good_rix),"rows will remain \n")
         cat("\t in total",nrow(dat)-length(good_rix),"rows will be removed \n")
-        cat("\t report on concordance: \n")
-        print(table(momBRTH=dat$MFODLAND[good_rix],momNAT=dat$MNAT[good_rix]))
-        print(table(momNAT=dat$MNAT[good_rix],dadNAT = dat$FNAT[good_rix]))
         
-        dat[good_rix,]
+        dat = dat[good_rix,]
+        cat("\t report on concordance: \n")
+        print(table(momBRTH=dat$MFODLAND,momNAT=dat$MNAT))
+        print(table(momNAT=dat$MNAT,dadNAT = dat$FNAT))
+        
+        generate_year_counts(dat, "very_nordic", F)
+        dat
 } # very stringent
 
 fun_mom_nordic = function(dat) {
@@ -420,50 +430,18 @@ fun_mom_nordic = function(dat) {
         
         cat("\t in total",length(good_rix),"rows will remain \n")
         cat("\t in total",nrow(dat)-length(good_rix),"rows will be removed \n")
-        cat("\t report on concordance: \n")
+
+        dat = dat[good_rix,]
         
-        dat[good_rix,]
+        generate_year_counts(dat, "mom_nordic", F)
+        dat
 } # not-so stringent
 
 fun_visualize_exclusions_by_year = function(year_matrix) {
-        years = as.numeric(year_matrix$year)
-        ref_vals = year_matrix$step1
-        m = as.matrix(year_matrix[,-(1:2)]) # all steps without initial numbers (2nd col)
+        year_changes = arrange(year_matrix, AR) %>%
+                mutate(rowsb = lag(rows), change = rows/rowsb) %>%
+                filter(stage!="initial")
         
-        # define a function used to estimate binomial p-value
-        p_binom = function(n_this_after,n_this_before,n_all_after,n_all_before) {
-                binom.test(n_this_after,n_this_before,p=n_all_after/n_all_before)$p.value
-        }
-        plot_dat = NULL
-        for (j in 1:ncol(m)) {
-                m[which(is.na(m[,j])),j] = 0 # TEMPORARY ****
-                
-                if (j==1) { 
-                        # estimate a p-value for each year
-                        ps = NULL
-                        for(i in 1:nrow(m)) {
-                                p = p_binom(m[i,j],ref_vals[i],sum(m[,j]),sum(ref_vals))
-                                ps = c(ps, p); rm(p)
-                        }         
-                        # estimate effect size ("fraction lost") for each year
-                        tmp = data.frame(years, step=j, fr = m[,j]/ref_vals,p_binom = ps)
-                        plot_dat = rbind(plot_dat,tmp); rm(tmp,ps)
-                } else {
-                        # estimate a p-value for each year
-                        ps = rep(NA,nrow(m))
-                        gix = which((m[,j-1]!=0)&(m[,j]!=0)) # good-rows' indexes
-                        for(i in gix) { # for each year
-                                p = p_binom(m[i,j],m[i,j-1],sum(m[gix,j]),sum(m[gix,j-1]))
-                                if (is.logical(p)) p = 1
-                                ps[i] = p; rm(p)
-                        }
-                        # estimate effect size ("fraction lost") for each year
-                        tmp = data.frame(years, step=j, fr = m[,j] / m[,j-1],p_binom = ps)
-                        plot_dat = rbind(plot_dat,tmp); rm(tmp,ps)
-                }
-        }
-        
-        library(RColorBrewer)
         breaks = c(0,0.1,0.3,0.5,0.7,0.8,  0.9,0.91,0.92,0.93,0.94 ,0.95,0.96,0.97,0.98,0.99,1)
         n_cols = length(breaks)-1
         n_blus = floor(n_cols/3)
@@ -473,37 +451,21 @@ fun_visualize_exclusions_by_year = function(year_matrix) {
         blus = brewer.pal(n_blus+2,"Blues")[2:(n_blus+1)]
         grns = rev(brewer.pal(n_grns+2, "Greens")[2:(n_grns+1)])
         reds = rev(brewer.pal(n_reds+2, "Reds")[2:(n_reds+1)])
-        #blus = brewer.pal(n_blus,"Blues")
-        #grns = rev(brewer.pal(n_grns, "Greens")
-        #reds = rev(brewer.pal(n_reds, "Reds")
-        
         colrs = c(reds,grns,blus)
-        plot_dat$colrs = as.character(cut(plot_dat$fr,breaks = breaks,labels = colrs)) #brewer.pal(length(breaks)-1, "Spectral")
-        plot_dat$colrs[which(is.na(plot_dat$colrs))] = NA
-        plot(plot_dat$years,plot_dat$step,pch=19,cex=1.5,xlab="year",ylab="stage",xaxt="n",yaxt="n",
-             ylim=c(0,ncol(m)+2),xlim = c(min(years),max(years)+15),col=plot_dat$colrs)
-        ix = plot_dat$p_binom < 0.01/(40*10)
-        points(plot_dat$years[ix],plot_dat$step[ix],pch=19,cex=0.3,col="white")
-        axis(1,at = seq(1975,2010,5),labels = seq(1975,2010,5))
-        axis(2,at = seq(ncol(m)),labels = seq(ncol(m)))
         
-        legend(x = max(years)+6, y = ncol(m)+1,lwd=6,xjust = 0,title = "sample loss",
-               legend = paste("<",round((1-breaks[-length(breaks)])*100,0),"%",sep=""),
-               col = colrs,border = F,box.col = 0,y.intersp = 1.2,cex = 0.8)
-        abline(v=1973:2012,lty=2,lwd=0.4,col="grey")
-        abline(h=seq(ncol(m)),lty=2,lwd=0.4,col="grey")
-        # add final summum of changes
-        fin_left = m[,ncol(m)]/ref_vals
-        fin_left_col = as.character(cut(fin_left,breaks = breaks,labels = colrs))
-        fin_left_col[which(is.na(fin_left_col))] = NA
-        points(years,rep(ncol(m)+1,length(years)),pch=19,cex=2.5,col=fin_left_col)
-        text(rep(2013,ncol(m)),seq(ncol(m)),pos = 4,cex=0.5,
-             labels = apply(m,2,function(x) sum(x,na.rm=T)))
+        print(ggplot(year_changes, aes(x=AR, y = factor(stage, level=unique(stage)))) +
+                geom_point(size=5, aes(col = cut(change, breaks=breaks))) +
+                scale_color_manual(values = colrs, guide = guide_legend(title="samples passing")) +
+                ylab("step") + xlab("year") +
+                theme_bw())
         
-        data.frame(years=years,loss = round((1-fin_left)*100,1),stringsAsFactors = F)
-        
-        
+        year_changes = group_by(year_matrix, AR) %>%
+                summarize(final = min(rows), initial = max(rows)) %>%
+                mutate(loss = paste(round((1-final/initial)*100,1), "%"))
+        print.data.frame(year_changes)
 }
+
+
 
 # to consider:
 # instead of removing preconditions/ICDcodes - add specific number of gest days
