@@ -440,7 +440,7 @@ fun_mom_nordic = function(dat) {
 fun_visualize_exclusions_by_year = function(year_matrix) {
         year_changes = arrange(year_matrix, AR) %>%
                 mutate(rowsb = lag(rows), change = rows/rowsb) %>%
-                filter(stage!="initial")
+                filter(stage!="initial", change>0)
         
         breaks = c(0,0.1,0.3,0.5,0.7,0.8,  0.9,0.91,0.92,0.93,0.94 ,0.95,0.96,0.97,0.98,0.99,1)
         n_cols = length(breaks)-1
