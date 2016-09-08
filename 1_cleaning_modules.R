@@ -177,14 +177,15 @@ fun_matPrecond = function(dat) {
                         tbl = rbind(tbl,df)
                         rm(df,precond,n_ill,coefs)
                 }
-                
-                # add  PREVIOUS C-SECTION
-                table(dat$TSECTIO,useNA="a")
-                precond = rep(0,nrow(dat))
-                precond[which(dat$TSECTIO==1)] = 1  # note, some previous CS might still remain (missing data)
-                coefs = coef(summary(lm(dat$GRDBS ~ precond))); coefs
-                df = data.frame(condition="TSECTIO",N=sum(precond==1),beta=coefs[2,1],pval=coefs[2,4])
-                tbl = rbind(tbl,df); rm(df)
+
+#  silenced section below is now transfered into a separate module
+#                # add  PREVIOUS C-SECTION
+#                table(dat$TSECTIO,useNA="a")
+#                precond = rep(0,nrow(dat))
+#                precond[which(dat$TSECTIO==1)] = 1  # note, some previous CS might still remain (missing data)
+#                coefs = coef(summary(lm(dat$GRDBS ~ precond))); coefs
+#                df = data.frame(condition="TSECTIO",N=sum(precond==1),beta=coefs[2,1],pval=coefs[2,4])
+#                tbl = rbind(tbl,df); rm(df)
                 
                 cat("
     pregnancies with the following maternal medical conditions will be excluded from the MFR:
@@ -196,7 +197,11 @@ fun_matPrecond = function(dat) {
                 
                 
                 # remove all pregnancies with preconditions from the data
-                sub = dat[,preconditions]; sub$prevCS = NA; sub$prevCS[which(precond==1)] = 1
+                sub = dat[,preconditions]
+                
+                #  silenced line below is now transfered into a separate module
+                # sub$prevCS = NA; sub$prevCS[which(precond==1)] = 1
+                
                 bad_rows = apply(sub,1,function(x) sum(!is.na(x))); table(bad_rows); sum(bad_rows>0)
                 
                 cat("
@@ -258,11 +263,32 @@ fun_spont1990 = function(dat) {
         dat
 }
 
-fun_CSections = function(dat) {
-        cat("CAESAREAN SECTION: \n \t additional exclusion for PREVIOUS CS and CURRENT CS \n\n")
-        cat("\t 1) pregnancies with a previous CS (SECFORE) summary: \n")        
+fun_previousCS = function(dat) {
+        
+        cat("CAESAREAN SECTION: \n \t exclusion for previous CS \n\n")
+        cat("\t 1) pregnancies with a previous CS (TSECTIO) summary: \n")        
+        print(table(dat$TSECTIO,useNA="a"))
+        cat("\n pregnancies with a previous CS (TSECTIO) split by year: \n")        
+        print(table(dat$TSECTIO,dat$AR,useNA="a"))
+        
+        cat("\n exclusions will be done if TSECTIO=1 (yes) \n")        
+        
+        bad_rows = which(dat$TSECTIO==1)
+        
+        cat("\n in total ",length(bad_rows)," rows will be removed \n")        
+        dat = dat[-bad_rows,]
+        cat("\n in total ",nrow(dat)," are remaining \n")        
+        
+        generate_year_counts(dat, "previousCSection", F)
+        dat
+
+}
+
+fun_currentCS = function(dat) {
+        cat("CAESAREAN SECTION: \n \t exclusion for current CS \n\n")
+        cat("\t 1) pregnancies with a current CS (SECFORE) summary: \n")        
         print(table(dat$SECFORE,useNA="a"))
-        cat("\n pregnancies with a previous CS (SECFORE) split by year: \n")        
+        cat("\n pregnancies with a current CS (SECFORE) split by year: \n")        
         print(table(dat$SECFORE,dat$AR,useNA="a"))
         
         cat("\n \t 2) pregnancies with a current CS (ELEKAKUT) summary: \n")        
@@ -273,17 +299,20 @@ fun_CSections = function(dat) {
         print(table(dat$ELEKAKUT,dat$AR,useNA="a"))
         cat("\n note that before 1999 there is no data! \n")        
         
-        cat("\n exclusions will be done if SECFORE=1 or ELEKAKUT=1 \n")        
+        cat("\n exclusions will be done if SECFORE=1 (yes) or ELEKAKUT=1 (elective) \n")        
+        print(table(SECFORE=dat$SECFORE,ELEKAKUT=dat$ELEKAKUT,useNA="a"))
         
         bad_rows = which((dat$ELEKAKUT==1)|(dat$SECFORE==1))
         
         cat("\n in total ",length(bad_rows)," rows will be removed \n")        
-        cat("\n in total ",nrow(dat)," are remaining \n")        
         dat = dat[-bad_rows,]
+        cat("\n in total ",nrow(dat)," are remaining \n")        
         
-        generate_year_counts(dat, "CSections", F)
+        generate_year_counts(dat, "currentCSection", F)
         dat
 }
+
+
 
 fun_ICDcodes = function(dat) {
         ### based on ICD codes reported in MFR

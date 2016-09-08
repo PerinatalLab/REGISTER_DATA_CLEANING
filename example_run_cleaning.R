@@ -14,7 +14,8 @@ dat = fun_momkidID(dat)  # should be 4 073 790  remaining
 dat = fun_multipregs(dat)
 dat = fun_deadborn(dat)   # remaining 3 958 944
 dat = fun_spont1990(dat) # also removes pregs with AR<1990
-dat = fun_CSections(dat)
+dat = fun_previousCS(dat)
+dat = fun_currentCS(dat)
 
 # maternal and fetal problems
 dat = fun_matPrecond(dat) # remaining 3 652 319
