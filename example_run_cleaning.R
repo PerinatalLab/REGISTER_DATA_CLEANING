@@ -23,7 +23,7 @@ dat = fun_ICDcodes(dat)
 dat = fun_mom_nordic(dat)
 
 # phenotype problems
-dat = fun_GAdating(dat)
+dat = fun_GAdating(dat,ok_codes) # ok_codes = c(1)
 dat = fun_GAmiss(dat)
 dat = fun_MHmiss(dat)
 

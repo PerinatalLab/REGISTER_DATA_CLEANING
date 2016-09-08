@@ -375,10 +375,14 @@ fun_GAmiss = function(dat) {
         dat
 }
 
-fun_GAdating = function(dat) {
-        cat("UNRELIABLE GESTATIONAL AGE DATING METHOD:
-            ")
-        bad_rows = which(dat$GRMETOD %in% c(0,3,4,9,11,12,13))
+fun_GAdating = function(dat,ok_codes) {
+        #ok_codes = c(1,2,5,6,7,8,10)
+        
+        cat("RELIABLE GESTATIONAL AGE DATING METHOD \n \n")
+        cat("\t these codes will be used as reliable method indicators: \n")
+        print(ok_codes)
+        
+        bad_rows = which(! dat$GRMETOD %in% ok_codes)
         cat("in total ",length(bad_rows),"rows will be removed")
         dat = dat[-bad_rows,]
         cat("in total ",nrow(dat),"left remaining")
