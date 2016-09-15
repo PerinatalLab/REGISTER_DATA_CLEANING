@@ -12,14 +12,17 @@ cat("NEW UPDATES!
     \t + MHmiss flexible thresholds
     \t + maternal Hgh-Wgh bivar filter")
 
+cat("\n UNFIXED ERRORS:
+    \t fun_visualize_exclusions_by_year(year_matrix) duoda klaidingus skaichius")
+
 cat("\n TO BE DONE:
-    \t - maternal weight vs height nonsence
-    \t - ability to select ICD codes
     \t - maternal BMI filter
     \t - previous CS: check MDIAG for icd10 O757 (Vaginal birth after previous cesarean)
     \t - exclude iatrogenics based on 658D and O755 codes
     \t - exclude Caesareans based on P034 (fetus and newborn affected by caesarean birth)
-    \t - option to choose which maternal conditions to be used in filtering")
+    \t - option to choose which maternal conditions to be used in filtering
+    \t - twin cleaning based on the twin register
+    \t - option to choose variables for ethnicity check")
 
 cat("\n CLEANING FUNCTIONS:
     \t fun_momID - mothers must have an ID
@@ -487,7 +490,7 @@ rep = rep[rep$use_filter,]
 tbl = rixs = cnt = NULL # table of effect sizes, exclusion rows, counts per year
 for (i in 1:nrow(rep)) {
         icd_code = rep$ICD_codes[i]
-        print(icd_code)
+        print(as.character(icd_code))
         
         # which rows (pregnancies) have a problem
         rix =  NULL; for(j in grep("^MDIAG|^BDIAG",colnames(dat))) rix=c(rix,grep(icd_code,dat[,j]))
@@ -539,7 +542,7 @@ fun_GAdating = function(dat,ok_codes) {
         
         cat("RELIABLE GESTATIONAL AGE DATING METHOD \n \n")
         cat("\t these codes will be used as reliable method indicators: \n")
-        print(ok_codes)
+        print(paste("GRMETOD = ",paste(ok_codes,collapse=", "),sep=""))
         
         bad_rows = which(! dat$GRMETOD %in% ok_codes)
         cat("in total ",length(bad_rows),"rows will be removed")
