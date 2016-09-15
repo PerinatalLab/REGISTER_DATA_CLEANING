@@ -4,10 +4,48 @@
 # modules that do some part of the data cleaning procedure
 # by Jonas B. 2016 July
 
+cat("NEW UPDATES!
+    \t + previous CS 
+    \t + current CS 
+    \t + ICD code choice ooption
+    \t + PROM
+    \t + MHmiss flexible thresholds
+    \t + maternal Hgh-Wgh bivar filter")
+
+cat("\n TO BE DONE:
+    \t - maternal weight vs height nonsence
+    \t - ability to select ICD codes
+    \t - maternal BMI filter
+    \t - previous CS: check MDIAG for icd10 O757 (Vaginal birth after previous cesarean)
+    \t - exclude iatrogenics based on 658D and O755 codes
+    \t - exclude Caesareans based on P034 (fetus and newborn affected by caesarean birth)
+    \t - option to choose which maternal conditions to be used in filtering")
+
+cat("\n CLEANING FUNCTIONS:
+    \t fun_momID - mothers must have an ID
+    \t fun_kidID - children must have an ID (will exclude deadborns)
+    \t fun_momkidID - mom-child pair must have a unique ID combination
+    \t fun_multipregs - remove twins,tripplets are excluded
+    \t fun_deadborn - remove stillbirths
+    \t fun_matPrecond - remove mothers with diabetes, kidney disease, SLE etc etc 
+    \t fun_spont1990 - use only spontaneous deliveries
+    \t fun_previousCS - remove previous Caesarean section
+    \t fun_currentCS - remove current Caesarean section (if elective)
+    \t fun_noPROM - remove deliveries with premature rupture of membranes (ICD indicators)
+    \t fun_ICDcodes - remove pregnancies with pregnancy-related medical problems
+    \t fun_GAmiss - exclude rows with mising GestAge data
+    \t fun_GAdating - use only specified method of GA dating
+    \t fun_MHmiss - exclude rows with missing maternal height
+    \t fun_mHghWgh - bivariate plot of maternal height and weight
+\t fun_very_nordic - both parents must be nordic based on all indicators
+\t fun_mom_nordic - mother must be nordic based on MFODLAND indicator ")
+
 
 library(dplyr)
 library(RColorBrewer)
 library(ggplot2)
+library(hexbin)
+
 
 # this function documents how the exclusions affected each year of the register
 generate_year_counts = function(dat, stage, show) {
@@ -265,6 +303,8 @@ fun_spont1990 = function(dat) {
 
 fun_previousCS = function(dat) {
         
+        # TO BE DONE:  ICD10 "O757" Vaginal birth after previous cesarean - check MDIAG
+        
         cat("CAESAREAN SECTION: \n \t exclusion for previous CS \n\n")
         cat("\t 1) pregnancies with a previous CS (TSECTIO) summary: \n")        
         print(table(dat$TSECTIO,useNA="a"))
@@ -314,48 +354,167 @@ fun_currentCS = function(dat) {
 
 
 
-fun_ICDcodes = function(dat) {
-        ### based on ICD codes reported in MFR
+fun_noPROM = function(dat) {
+cat("PROM deliveries: \n \t exclude deliveries that start with premature rupture of membranes \n\n")
+
+cat( "Exclusion codes based on ICD-08 system (1969-1986):
+\t ^76910  - ruptura praematura membranae fetus")
+cat( "Exclusion codes based on ICD-09 system (1987-1997):
+\t ^658B  - för tidig hinnbristning (för tidig fostervattenavgång)
+\t ^658C  - fördröjd förlossning efter spontan eller ospecificerad hinnbristning
+\t ^658D -  fördröjd förlossning efter artificiell hinnsprängning ")
+cat( "Exclusion codes based on ICD-10 system (1997-xxxx):
+\t ^O42  -  PROM 
+\t ^O755 - Fördröjd förlossning efter artificiell hinnsprängning
+\t ^O756 - Fördröjd förlossning efter spontan eller icke specificerad hinnbristning (3cat: A,B,X) ")
+
+icd08  = "^76910" #  ruptura praematura membranae fetus
+icd09b = "^658B" #  för tidig hinnbristning (för tidig fostervattenavgång)
+icd09c = "^658C" #  fördröjd förlossning efter spontan eller ospecificerad hinnbristning
+icd09d = "^658D" #  fördröjd förlossning efter artificiell hinnsprängning ")
+icd10a = "^O42"  # PROM
+icd10b = "^O755" # Fördröjd förlossning efter artificiell hinnsprängning
+icd10c = "^O756" # Fördröjd förlossning efter spontan eller icke specificerad hinnbristning (3cat: A,B,X)
+
+icd_codes = c(icd08,icd09b,icd09c,icd09d,icd10a,icd10b,icd10c)    
         
-        icd_codes = c("^O40","^O41","^O42","^O43","^O44","^O45","^O46","^762","^641","^642")
-        cat("ICD CODES:
-            the following ICD codes will be searched in MDIAG and BDIAG columns:
-            ",icd_codes,"
-            ^O40 - Onormalt stor mängd fostervatten (-1d)
-            ^O41	Oligohydramnion and Co  (+4 d)
-            ^O42	För tidig hinnbristning, types... (-35 d)
-            ^O43	Placentalt transfusionssyndrom, Missbildning, Patologiskt fastsittande, accreta/increta/percreta (-31 d)
-            ^O44	Placenta praevia, types... (-23 d)
-            ^O45	För tidig avlossning av placenta, types... (-29 d)  (abruptio)
-            ^O46	Blödning före förlossningen, types... (-15 d)
-            ^641  Blödning i sen graviditet, för tidig avlossning av moderkakan och T föreligg ande moderkaka
-            Haemorrhagia in graviditate posteriore, abruptio placentae et placenta praevia 
-            ^642  Hypertoni som komplikation till graviditet, förlossning och barnsängs (-9 d)
-            ")
-        
-        tbl = rixs = NULL
-        for (icd_code in icd_codes) {
+
+tbl = rixs = cnt = NULL # table of effect sizes, exclusion rows, counts per year
+        for (i in 1:length(icd_codes)) {
+                icd_code = icd_codes[i]
                 print(icd_code)
-                rix = NULL
-                for(j in grep("^MDIAG|^BDIAG",colnames(dat))) {
-                        rix = c(rix,grep(icd_code,dat[,j]))
-                }
-                rix = unique(rix)
-                phe = rep(0,nrow(dat)); phe[rix]=1
+                
+                # which rows (pregnancies) have a problem
+                rix =  NULL; for(j in grep("^MDIAG|^BDIAG",colnames(dat))) rix=c(rix,grep(icd_code,dat[,j]))
+                
+                # year-split of incidence (cumulative)
+                phe = factor(rep(0,nrow(dat)),levels = c(0,1))
+                
+                if(length(rix)>0) {
+                phe[unique(rix)] = 1
                 coefs = coef(summary(lm(dat$GRDBS ~ phe)))
                 df = data.frame(condition=icd_code,N=length(rix),beta=round(coefs[2,1],1),pval=coefs[2,4])
+                } else {
+                df = data.frame(condition=icd_code,N=length(rix),beta=NA,pval=NA)
+                }
+                
+                cnt = rbind(cnt, table(dat$AR,phe)[,2]) # count                
                 tbl = rbind(tbl,df)
                 rixs = c(rixs,rix)
-                rm(df,coefs,phe,rix)
-        }
-        # preview results
-        rixs = unique(rixs)
+                rm(df,phe,rix)
+        }        
+        rixs = sort(unique(rixs))
         
-        cat("numbers of rows that are selected for exclusion due to ICD codes: 
-            ")
+        cnt = as.data.frame(t(cnt))
+        colnames(cnt) = icd_codes
+        print(cnt)
+        print(tbl)
+
+cat("in total ",length(rixs), " rows will be removed")
+        dat = dat[-rixs,]
+cat(" there are ",nrow(dat), " rows remaining") 
+        
+        generate_year_counts(dat, "noPROM", F)
+        dat
+}
+
+# other name - pregCompl
+fun_ICDcodes = function(dat,icd_use) {
+        # second argument is a vector of logical TRUE/FALSE values for ICD codes. example:
+        # icd_use = c(T,T,T,T,T,T,T)
+        
+cat("\t NOTE that:
+\t ICD-8  codes were used in 1969-1986 
+\t ICD-9  codes were used in 1987-1996
+\t ICD-10 codes were used in 1997+ 
+\t (there is a significant nonsynonymous overlap between ICD-8 and ICD-9)")
+        
+cat("\n\t NOTE that:
+\t only ICD-10 codes will be used..
+\t ..thus all deliveries occuring before 1997 will be excluded
+\t ICD-09 option is not implemented yet") 
+
+# temporary! until ICD9 option will be implemented
+bad_rows = which(dat$AR<1997)
+dat = dat[-bad_rows,]
+
+cat("YEAR-REMOVAL STAGE: \n\t in total ",length(bad_rows),
+    " rows were removed \n\t and there are ",
+    nrow(dat), " rows remaining") 
+
+icd10_codes = c("^O40","^O410","^O41[2-9]",
+                      "^O43","^O44","^O45","^O46")
+#       icd09_codes = c("^657","^6580","^658[4,8,9]",
+#                        "^656[0,5,7]|^7622","^6410|^6411","^6412","^641[2,3,8,9]")
+#        icd08_codes = c()
+                
+        icd_short = c("MuchAmnio","OligAmnio","AmnioMemb",
+                      "PlacGrowth","PlacPrevia","PlacAbrupt","Bleeding")
+        icd_long = c("Abnormally large amount of amniotic fluid",
+                     "Oligohydramnion",
+                     "Other amnion/membrane problems",
+                     "Abnormality in the placenta types",
+                     "Placenta praevia 2types",
+                     "Premature separation of the placenta (abruptio)",
+                     "Bleeding before delivery")
+
+#generate a report of exclusions to be used:        
+rep = data.frame(ICD_codes = icd10_codes,use_filter=icd_use,short=icd_short,description=icd_long)
+
+cat("These ICD10 codes will be used as exclusion criteria: \n")
+print(rep)
+
+# leave only those which were marked to be used
+rep = rep[rep$use_filter,]
+
+# ^O40 - Abnormally large amount of amniotic fluid (-1d)
+# ^O410 - Oligohydramnion  (+4d ?) 
+# ^O41[2-9] - Other amnion and membrane problems
+# ^O43	Placentalt transfusionssyndrom, Missbildning, Patologiskt fastsittande, accreta/increta/percreta (-31 d)
+# ^O44	Placenta praevia, types... (-23 d)
+# ^O45	För tidig avlossning av placenta, types... (-29 d)  (abruptio)
+# ^O46	Blödning före förlossningen, types... (-15 d)
+# ^641  Blödning i sen graviditet, för tidig avlossning av moderkakan och T föreligg ande moderkaka
+#       Haemorrhagia in graviditate posteriore, abruptio placentae et placenta praevia 
+# ^642  Hypertoni som komplikation till graviditet, förlossning och barnsängs (-9 d)
+        
+
+#cat("ICD CODES:
+#    the following ICD codes will be searched in MDIAG and BDIAG columns:
+#    ",icd_codes)
+
+
+tbl = rixs = cnt = NULL # table of effect sizes, exclusion rows, counts per year
+for (i in 1:nrow(rep)) {
+        icd_code = rep$ICD_codes[i]
+        print(icd_code)
+        
+        # which rows (pregnancies) have a problem
+        rix =  NULL; for(j in grep("^MDIAG|^BDIAG",colnames(dat))) rix=c(rix,grep(icd_code,dat[,j]))
+        
+        # year-split of incidence (cumulative)
+        phe = rep(0,nrow(dat)); phe[unique(rix)]=1
+        cnt = rbind(cnt, table(dat$AR,phe)[,2]) # count
+        
+        coefs = coef(summary(lm(dat$GRDBS ~ phe)))
+        df = data.frame(condition=rep$short[i],N=length(rix),beta=round(coefs[2,1],1),pval=coefs[2,4])
+        tbl = rbind(tbl,df)
+        rixs = c(rixs,rix)
+        rm(df,coefs,phe,rix)
+}
+
+rixs = unique(rixs)
+
+cnt = as.data.frame(t(cnt))
+colnames(cnt) = rep$short
+    
+cat("ICD codes found for each year: \n")
+print(cnt)
+
+cat("ICD codes and their effect sizes on GestAge: \n")
         print(tbl)
         
-        cat(" in total ",length(rixs), " will be removed") # selected for exclusion : 67 272
+cat("ICD-exclusion stage: \n in total ",length(rixs), " will be removed") # selected for exclusion : 67 272
         dat = dat[-rixs,]
         cat(" there are ",nrow(dat), " rows remaining") 
         
@@ -391,34 +550,76 @@ fun_GAdating = function(dat,ok_codes) {
         dat
 }
 
-fun_MHmiss = function(dat) {
-        cat("MISSING (or unreasonable) MATERNAL HEIGHT:
-            ")
-        cat(" - range of present maternal height: ",paste(range(dat$MLANGD,na.rm=T),collapse="-"),"cm
-            ")
+fun_MHmiss = function(dat,low,upp) {
+        cat("REMOVE MISSING OR UNRELIABLE MATERNAL HEIGHT: \n")
+        cat("\t - rows with missing height will be removed \n")
+        cat("\t - rows with height <",low,"cm will be removed \n")
+        cat("\t - rows with height >",upp,"cm will be removed \n")
+        cat("\t - problem: MatHgh only available for years 1982-2012, so years 1973-1981 will be lost! \n")
+        cat("\t ..there are ",sum(dat$MLANGD=="")," rows withough matHgh value \n")
         
         # maternal height (set to missing before deleting later)
-        # PROBLEM: MatHgh is only present for years 1982-2012, so 1973-1981 are lost!
-        # I will preserve the 1973-1981 data for analyses without adjustments
         dat$MLANGD[which(dat$MLANGD=="")]=NA # maternal height must be present for adjustments
         dat$MLANGD = as.numeric(dat$MLANGD)
-        dat$MLANGD[which(dat$MLANGD<140)]=NA # suspicious-height threshold determined by Julius (also, no sib-similarity below this thr)
-        dat$MLANGD[which(dat$MLANGD>210)]=NA # almost incredible values
-        #ix=sample(nrow(dat),1e3,replace=F); plot(dat$MLANGD[ix]~dat$AR[ix]); rm(ix)
-        #table(dat$AR[which(!is.na(dat$MLANGD))])
         
-        cat(" - in total ",sum(is.na(dat$MLANGD)),"rows will be removed
-            ")
+        cat(" full range of maternal height: ",paste(range(dat$MLANGD,na.rm=T),collapse="-"),"cm \n")
+        
+        sd_low = round(mean(dat$MLANGD,na.rm=T)-sd(dat$MLANGD,na.rm=T)*2,0)
+        sd_upp = round(mean(dat$MLANGD,na.rm=T)+sd(dat$MLANGD,na.rm=T)*2,0)
+        cat(" +/-2SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
+        
+        sd_low = round(mean(dat$MLANGD,na.rm=T)-sd(dat$MLANGD,na.rm=T)*3,0)
+        sd_upp = round(mean(dat$MLANGD,na.rm=T)+sd(dat$MLANGD,na.rm=T)*3,0)
+        cat(" +/-3SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
+        
+        sd_low = round(mean(dat$MLANGD,na.rm=T)-sd(dat$MLANGD,na.rm=T)*4,0)
+        sd_upp = round(mean(dat$MLANGD,na.rm=T)+sd(dat$MLANGD,na.rm=T)*4,0)
+        cat(" +/-4SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
+        
+        cat(" selected range for inclusion: ",paste(low,upp,sep="-"),"cm \n")
+        cat(" number of rows to be removed: \t ")
+        print(paste("below:",sum(dat$MLANGD<low,na.rm=T),", above:",sum(dat$MLANGD>upp,na.rm=T),sep=""))
+        
+        dat$MLANGD[which(dat$MLANGD<low)]=NA # suspicious-height threshold determined by Julius (also, no sib-similarity below this thr)
+        dat$MLANGD[which(dat$MLANGD>upp)]=NA # almost incredible values
+        
+        cat(" - in total ",sum(is.na(dat$MLANGD)),"rows will be removed \n")
         dat = dat[which(!is.na(dat$MLANGD)),]
-        cat(" - in total ",nrow(dat),"left remaining
-            ")
-        cat(" - range of remaining maternal height: ",paste(range(dat$MLANGD,na.rm=T),collapse="-"),"cm
-            ")
+        cat(" - in total ",nrow(dat),"left remaining \n")
+        cat(" - range of remaining maternal height: ",paste(range(dat$MLANGD,na.rm=T),collapse="-"),"cm \n")
         
         generate_year_counts(dat, "MHmiss", F)
         dat
 }
 
+fun_mHghWgh = function(dat) {
+        cat("MATERNAL HEIGHT-WEIGHT BIVARIATE ANOMALIES: \n")
+        
+        # a function which plots bivariate plot without the time consumtion
+        fun_hexbplot = function(X,Y,LOG,XLAB,YLAB) {
+                h=hexbin(Y~X); x=h@xcm; y=h@ycm; s=h@count
+                plot(x,y,pch=1,cex=log(s,LOG),xlab=XLAB,ylab=YLAB,
+                     xlim=range(X,na.rm=T),ylim=range(Y,na.rm=T))
+        }
+        fun_hexbplot(dat$MLANGD,dat$MVIKT,200,"Maternal height","Maternal weight")
+        #at = 10^(1:4); legend(100,150,legend = at,pch = 1, pt.cex = log(at,200))
+        #abline(v=c(125,200),h=c(30,175),col="blue")
+        #bad1=which( (dat$MLANGD<125)|(dat$MLANGD>200)|(dat$MVIKT>175)|(dat$MVIKT<30) )
+        #points(MVIKT~MLANGD,data=dat[bad1,],col="red",pch=19,cex=0.5)
+        
+        abline(-485,4,col="blue")
+        bad2=which(  dat$MVIKT > (dat$MLANGD*4 - 485))
+        points(MVIKT~MLANGD,data=dat[bad2,],col="red",pch=19,cex=0.5)
+
+        cat("rows selected for exclusion: ", length(bad2))        
+        if(length(bad2)>0) dat=dat[-bad2,]
+        cat("\n rows remaining: ", nrow(dat))        
+        
+        generate_year_counts(dat, "mHghWgh", F)
+        dat
+        
+}
+        
 fun_very_nordic = function(dat) {
         
         # countries
@@ -454,9 +655,9 @@ fun_mom_nordic = function(dat) {
         nordic = c("SVERIGE","FINLAND","NORGE","DANMARK")
         #europe = c(nordic,"POLEN","TYSKLAND","FRANKRIKE","ESTLAND","ISLAND","UKRAINA","SPANIEN","GREKLAND")
         
-        cat("NORDIC PARENTS: \n \t (MFODLAND indicates nordic origin) \n")
+        cat("NORDIC MOTHER: \n \t (MFODLAND indicates nordic origin) \n")
         cat("\t nordic countries:",nordic,"\n")
-        
+    
         good_rix = which(dat$MFODLAND %in% nordic)
         #sub = dat[which((dat$MFODLAND %in% nordic)&(dat$MNAT %in% nordic)),]
         #sub = dat[which(dat$MFODLAND %in% nordic),]
@@ -497,6 +698,8 @@ fun_visualize_exclusions_by_year = function(year_matrix) {
                 mutate(loss = paste(round((1-final/initial)*100,1), "%"))
         print.data.frame(year_changes)
 }
+
+
 
 
 
