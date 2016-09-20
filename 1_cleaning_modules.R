@@ -48,6 +48,7 @@ library(dplyr)
 library(RColorBrewer)
 library(ggplot2)
 library(hexbin)
+library(tidyr)
 
 
 # this function documents how the exclusions affected each year of the register
@@ -695,6 +696,9 @@ fun_visualize_exclusions_by_year = function(year_matrix) {
                 scale_color_manual(values = colrs, guide = guide_legend(title="samples passing")) +
                 ylab("step") + xlab("year") +
                 theme_bw())
+        
+        year_matrix = mutate(AR = as.factor(AR)) %>%
+                complete(AR, fill = list(rows=0))
         
         year_changes = group_by(year_matrix, AR) %>%
                 summarize(final = min(rows), initial = max(rows)) %>%
