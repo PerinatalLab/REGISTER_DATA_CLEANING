@@ -704,8 +704,8 @@ fun_visualize_exclusions_by_year = function(year_matrix) {
                                    labels = process_labels) +
                 ylab("step") + xlab("year") + theme_bw())
         
-        year_matrix = mutate(year_matrix, AR = as.factor(AR)) %>%
-                complete(AR, fill = list(rows=0))
+        year_matrix = mutate(year_matrix, AR = as.factor(AR), stage=as.factor(stage)) %>%
+                complete(AR, stage, fill = list(rows=0))
         
         year_changes = group_by(year_matrix, AR) %>%
                 summarize(final = min(rows), initial = max(rows)) %>%
