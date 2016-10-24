@@ -692,11 +692,17 @@ fun_visualize_exclusions_by_year = function(year_matrix) {
         reds = rev(brewer.pal(n_reds+2, "Reds")[2:(n_reds+1)])
         colrs = c(reds,grns,blus)
         
+        process_labels = function(l){
+                ll = regmatches(l, gregexpr("[0-9.]+", l))
+                ll = sapply(ll, function(x) paste(as.numeric(x)*100, collapse="-"))
+                paste(ll, "%")
+        }
+        
         print(ggplot(year_changes, aes(x=AR, y = factor(stage, level=unique(stage)))) +
                 geom_point(size=5, aes(col = cut(change, breaks=breaks))) +
-                scale_color_manual(values = colrs, guide = guide_legend(title="% of samples passing")) +
-                ylab("step") + xlab("year") +
-                theme_bw())
+                scale_color_manual(values = colrs, guide = guide_legend(title="% of samples \n passing this step"),
+                                   labels = process_labels) +
+                ylab("step") + xlab("year") + theme_bw())
         
         year_matrix = mutate(year_matrix, AR = as.factor(AR)) %>%
                 complete(AR, fill = list(rows=0))
