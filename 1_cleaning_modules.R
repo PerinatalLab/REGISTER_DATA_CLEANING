@@ -694,11 +694,11 @@ fun_visualize_exclusions_by_year = function(year_matrix) {
         
         print(ggplot(year_changes, aes(x=AR, y = factor(stage, level=unique(stage)))) +
                 geom_point(size=5, aes(col = cut(change, breaks=breaks))) +
-                scale_color_manual(values = colrs, guide = guide_legend(title="samples passing")) +
+                scale_color_manual(values = colrs, guide = guide_legend(title="% of samples passing")) +
                 ylab("step") + xlab("year") +
                 theme_bw())
         
-        year_matrix = mutate(AR = as.factor(AR)) %>%
+        year_matrix = mutate(year_matrix, AR = as.factor(AR)) %>%
                 complete(AR, fill = list(rows=0))
         
         year_changes = group_by(year_matrix, AR) %>%
