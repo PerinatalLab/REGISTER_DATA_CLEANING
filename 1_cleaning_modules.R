@@ -3,8 +3,10 @@
 ##############   CLEAN THE SEMFR DATA   ###################
 # modules that do some part of the data cleaning procedure
 # by Jonas B. 2016 July
+# last update: 2016 Oct24
 
 cat("NEW UPDATES!
+    \t + more universal parental origin script (replaces \"nordic\" and \"very_nordic\") 
     \t + previous CS 
     \t + current CS 
     \t + ICD code choice ooption
@@ -21,8 +23,7 @@ cat("\n TO BE DONE:
     \t - exclude iatrogenics based on 658D and O755 codes
     \t - exclude Caesareans based on P034 (fetus and newborn affected by caesarean birth)
     \t - option to choose which maternal conditions to be used in filtering
-    \t - twin cleaning based on the twin register
-    \t - option to choose variables for ethnicity check")
+    \t - twin cleaning based on the twin register")
 
 cat("\n CLEANING FUNCTIONS:
     \t fun_momID - mothers must have an ID
@@ -40,8 +41,7 @@ cat("\n CLEANING FUNCTIONS:
     \t fun_GAdating - use only specified method of GA dating
     \t fun_MHmiss - exclude rows with missing maternal height
     \t fun_mHghWgh - bivariate plot of maternal height and weight
-\t fun_very_nordic - both parents must be nordic based on all indicators
-\t fun_mom_nordic - mother must be nordic based on MFODLAND indicator ")
+    \t fun_origin - parent(s) must be from selected countries")
 
 
 library(dplyr)
@@ -624,56 +624,46 @@ fun_mHghWgh = function(dat) {
         
 }
         
-fun_very_nordic = function(dat) {
+fun_origin = function(dat,countryBlocks,parentVariabl) {
+        # example values
+        #countryBlocks="nordic"
+        #parentVariabl=c("MFODLAND","MNAT","FNAT")
         
-        # countries
-        #tbl = table(dat$MFODLAND)
-        #df = data.frame(country=names(tbl),cnt=as.numeric(tbl),stringsAsFactors = F)
-        #df = df[order(df$cnt,decreasing = T),]
-        #df[1:25,]
-        #df[26:50,]
-        
+        # possible country blocks and their countries
+        sweden = "SVERIGE"
         nordic = c("SVERIGE","FINLAND","NORGE","DANMARK")
         europe = c(nordic,"POLEN","TYSKLAND","FRANKRIKE","ESTLAND","ISLAND","UKRAINA","SPANIEN","GREKLAND")
         
-        cat("NORDIC PARENTS: \n \t (all indicators point that parents are nordic) \n")
-        cat("\t nordic countries:",nordic,"\n")
+        # which one was selected?
+        countries = get(countryBlocks)
         
-        good_rix = which((dat$MFODLAND %in% nordic)&(dat$MNAT %in% nordic)&(dat$FNAT %in% nordic))
-        #sub = dat[which((dat$MFODLAND %in% nordic)&(dat$MNAT %in% nordic)),]
-        #sub = dat[which(dat$MFODLAND %in% nordic),]
+        # report
+        cat("PARENTAL ORIGIN: \n")
+        cat("\t selected countries:",countries,"\n")
+        cat("\t selected variables:",parentVariabl,"\n")
+        cat("\t (note, that strictly ALL selected variables must match selected countries)\n")
+        cat("\t (if no value exists for at least one variable - pregnancy gets excluded!)\n")
+        
+        good_rix = which(apply(dat[,parentVariabl],1,function(x) all(x %in% countries)&all(!is.na(x))))
         
         cat("\t in total",length(good_rix),"rows will remain \n")
         cat("\t in total",nrow(dat)-length(good_rix),"rows will be removed \n")
         
         dat = dat[good_rix,]
-        cat("\t report on concordance: \n")
-        print(table(momBRTH=dat$MFODLAND,momNAT=dat$MNAT))
-        print(table(momNAT=dat$MNAT,dadNAT = dat$FNAT))
+        cat("\n \t report on concordance: \n")
+        cmbn = combn(length(parentVariabl),2)
+        for (j in 1:ncol(cmbn)) {
+                var1 = parentVariabl[cmbn[1,j]]
+                var2 = parentVariabl[cmbn[2,j]]
+                cat("\n \t rows=",var1,", columns=",var2," \n")
+                print(table(dat[,var1],dat[,var2]))
+                rm(var1,var2)
+        }
         
-        generate_year_counts(dat, "very_nordic", F)
+        rm(countries,good_rix,cmbn)
+        generate_year_counts(dat, "parent_origin", F)
         dat
-} # very stringent
-
-fun_mom_nordic = function(dat) {
-        nordic = c("SVERIGE","FINLAND","NORGE","DANMARK")
-        #europe = c(nordic,"POLEN","TYSKLAND","FRANKRIKE","ESTLAND","ISLAND","UKRAINA","SPANIEN","GREKLAND")
-        
-        cat("NORDIC MOTHER: \n \t (MFODLAND indicates nordic origin) \n")
-        cat("\t nordic countries:",nordic,"\n")
-    
-        good_rix = which(dat$MFODLAND %in% nordic)
-        #sub = dat[which((dat$MFODLAND %in% nordic)&(dat$MNAT %in% nordic)),]
-        #sub = dat[which(dat$MFODLAND %in% nordic),]
-        
-        cat("\t in total",length(good_rix),"rows will remain \n")
-        cat("\t in total",nrow(dat)-length(good_rix),"rows will be removed \n")
-
-        dat = dat[good_rix,]
-        
-        generate_year_counts(dat, "mom_nordic", F)
-        dat
-} # not-so stringent
+} 
 
 fun_visualize_exclusions_by_year = function(year_matrix) {
         year_changes = arrange(year_matrix, AR) %>%

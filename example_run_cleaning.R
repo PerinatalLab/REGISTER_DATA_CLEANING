@@ -20,8 +20,8 @@ dat = fun_currentCS(dat)
 # maternal and fetal problems
 dat = fun_matPrecond(dat) # remaining 3 652 319
 dat = fun_ICDcodes(dat)  
-dat = fun_mom_nordic(dat)
-
+dat = fun_origin(dat,"nordic",c("MFODLAND","MNAT","FNAT")) 
+        
 # phenotype problems
 dat = fun_GAdating(dat,ok_codes) # ok_codes = c(1)
 dat = fun_GAmiss(dat)
