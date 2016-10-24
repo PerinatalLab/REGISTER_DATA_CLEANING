@@ -644,12 +644,22 @@ fun_origin = function(dat,countryBlocks,parentVariabl) {
         cat("\t (note, that strictly ALL selected variables must match selected countries)\n")
         cat("\t (if no value exists for at least one variable - pregnancy gets excluded!)\n")
         
+        if (length(parentVariabl)>1) {
         good_rix = which(apply(dat[,parentVariabl],1,function(x) all(x %in% countries)&all(!is.na(x))))
+        }
+        
+        if (length(parentVariabl)==1) {
+                x = dat[,parentVariabl]
+                good_rix = which( (x %in% countries) & (!is.na(x)) )
+                rm(x)
+        }
         
         cat("\t in total",length(good_rix),"rows will remain \n")
         cat("\t in total",nrow(dat)-length(good_rix),"rows will be removed \n")
         
         dat = dat[good_rix,]
+        
+        if (length(parentVariabl)>1) {
         cat("\n \t report on concordance: \n")
         cmbn = combn(length(parentVariabl),2)
         for (j in 1:ncol(cmbn)) {
@@ -659,8 +669,9 @@ fun_origin = function(dat,countryBlocks,parentVariabl) {
                 print(table(dat[,var1],dat[,var2]))
                 rm(var1,var2)
         }
-        
-        rm(countries,good_rix,cmbn)
+        rm(cmbn)
+        }
+        rm(countries,good_rix)
         generate_year_counts(dat, "parent_origin", F)
         dat
 } 
