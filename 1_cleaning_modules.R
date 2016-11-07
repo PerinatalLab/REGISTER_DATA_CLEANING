@@ -6,6 +6,7 @@
 # last update: 2016 Oct24
 
 cat("NEW UPDATES!
+    \t + more stringent parental origin check (through other pregs of the same mother)    
     \t + more universal parental origin script (replaces \"nordic\" and \"very_nordic\") 
     \t + previous CS 
     \t + current CS 
@@ -15,7 +16,7 @@ cat("NEW UPDATES!
     \t + maternal Hgh-Wgh bivar filter")
 
 cat("\n UNFIXED ERRORS:
-    \t fun_visualize_exclusions_by_year(year_matrix) duoda klaidingus skaichius")
+    \t fun_visualize_exclusions_by_year(year_matrix) duoda klaidingus skaichius - RESOLVED!")
 
 cat("\n TO BE DONE:
     \t - maternal BMI filter
@@ -623,11 +624,13 @@ fun_mHghWgh = function(dat) {
         dat
         
 }
-        
-fun_origin = function(dat,countryBlocks,parentVariabl) {
+
+fun_origin = function(dat,orig,countryBlocks,parentVariabl,strict) {
+        # orig = original uncleaned dataset
+        # strict = LOGICAL. if TRUE - check other pregs of the same mother/father to be consistent
         # example values
-        #countryBlocks="nordic"
-        #parentVariabl=c("MFODLAND","MNAT","FNAT")
+        # countryBlocks="nordic"
+        # parentVariabl=c("MFODLAND","MNAT","FNAT")
         
         # possible country blocks and their countries
         sweden = "SVERIGE"
@@ -645,7 +648,7 @@ fun_origin = function(dat,countryBlocks,parentVariabl) {
         cat("\t (if no value exists for at least one variable - pregnancy gets excluded!)\n")
         
         if (length(parentVariabl)>1) {
-        good_rix = which(apply(dat[,parentVariabl],1,function(x) all(x %in% countries)&all(!is.na(x))))
+                good_rix = which(apply(dat[,parentVariabl],1,function(x) all(x %in% countries)&all(!is.na(x))))
         }
         
         if (length(parentVariabl)==1) {
@@ -660,20 +663,50 @@ fun_origin = function(dat,countryBlocks,parentVariabl) {
         dat = dat[good_rix,]
         
         if (length(parentVariabl)>1) {
-        cat("\n \t report on concordance: \n")
-        cmbn = combn(length(parentVariabl),2)
-        for (j in 1:ncol(cmbn)) {
-                var1 = parentVariabl[cmbn[1,j]]
-                var2 = parentVariabl[cmbn[2,j]]
-                cat("\n \t rows=",var1,", columns=",var2," \n")
-                print(table(dat[,var1],dat[,var2]))
-                rm(var1,var2)
+                cat("\n \t report on concordance: \n")
+                cmbn = combn(length(parentVariabl),2)
+                for (j in 1:ncol(cmbn)) {
+                        var1 = parentVariabl[cmbn[1,j]]
+                        var2 = parentVariabl[cmbn[2,j]]
+                        cat("\n \t rows=",var1,", columns=",var2," \n")
+                        print(table(dat[,var1],dat[,var2]))
+                        rm(var1,var2)
+                }
+                rm(cmbn)
         }
-        rm(cmbn)
+        
+        ### extra precaution: what if mother in her other pregnancy reported diffrent nationality?
+        if (strict) {
+                #colnms = parentVariabl[which(parentVariabl %in% c("MFODLAND","MNAT"))]
+                tmp = orig[which(orig$lpnr_mor %in% dat$lpnr_mor ),c("lpnr_mor","MFODLAND","MNAT")]
+                ix1 = which((!tmp$MFODLAND %in% countries)&(tmp$MFODLAND!=""))
+                ix2 = which((!tmp$MNAT %in% countries)&(tmp$MNAT!=""))
+                if ( all(c("MFODLAND","MNAT") %in% parentVariabl) ) {
+                        bad_ids = unique(c(tmp$lpnr_mor[ix1],tmp$lpnr_mor[ix2])) # refers to orginal object
+                        bad_rows = which(dat$lpnr_mor %in% bad_ids) # refers to the object being cleaned
+                        cat("\n ALSO, due to the \"strict\" filter flag,",length(bad_rows),"pregs will be excluded \n")
+                        if (length(bad_rows)>0) dat = dat[-bad_rows,]         
+                        rm(bad_ids,bad_rows)
+                }
+                if ( (sum(parentVariabl=="MFODLAND")==1) & (sum(parentVariabl=="MNAT")==0) )  {
+                        bad_ids = unique(tmp$lpnr_mor[ix1]) # refers to orginal object
+                        bad_rows = which(dat$lpnr_mor %in% bad_ids) # refers to the object being cleaned
+                        cat("\n ALSO, due to the \"strict\" filter flag,",length(bad_rows),"pregs will be excluded \n")
+                        if (length(bad_rows)>0) dat = dat[-bad_rows,]
+                        rm(bad_ids,bad_rows)
+                }
+                if ( (sum(parentVariabl=="MNAT")==1) & (sum(parentVariabl=="MFODLAND")==0) )  {
+                        bad_ids = unique(tmp$lpnr_mor[ix2]) # refers to orginal object
+                        bad_rows = which(dat$lpnr_mor %in% bad_ids) # refers to the object being cleaned
+                        cat("\n ALSO, due to the \"strict\" filter flag,",length(bad_rows),"pregs will be excluded \n")
+                        if (length(bad_rows)>0) dat = dat[-bad_rows,]
+                        rm(bad_ids,bad_rows)
+                }
+                rm(tmp,ix1,ix2)
         }
         rm(countries,good_rix)
         generate_year_counts(dat, "parent_origin", F)
-        dat
+        return(dat)
 } 
 
 fun_visualize_exclusions_by_year = function(year_matrix) {
