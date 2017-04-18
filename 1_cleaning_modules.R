@@ -12,14 +12,13 @@ cat("NEW UPDATES!
     \t + current CS 
     \t + ICD code choice ooption
     \t + PROM
-    \t + MHmiss flexible thresholds
-    \t + maternal Hgh-Wgh bivar filter")
+    \t + matHghQC flexible thresholds, value-transfer from other pregs, discordance filters
+    \t + maternal Hgh-Wgh bivar filter with BMI-acording-to-age")
 
 cat("\n UNFIXED ERRORS:
     \t fun_visualize_exclusions_by_year(year_matrix) duoda klaidingus skaichius - RESOLVED!")
 
 cat("\n TO BE DONE:
-    \t - maternal BMI filter
     \t - previous CS: check MDIAG for icd10 O757 (Vaginal birth after previous cesarean)
     \t - exclude iatrogenics based on 658D and O755 codes
     \t - exclude Caesareans based on P034 (fetus and newborn affected by caesarean birth)
@@ -40,8 +39,9 @@ cat("\n CLEANING FUNCTIONS:
     \t fun_ICDcodes - remove pregnancies with pregnancy-related medical problems
     \t fun_GAmiss - exclude rows with mising GestAge data
     \t fun_GAdating - use only specified method of GA dating
-    \t fun_MHmiss - exclude rows with missing maternal height
-    \t fun_mHghWgh - bivariate plot of maternal height and weight
+    \t fun_mHghQC - clean maternal height, exclude rows with missing values
+    \t fun_mWghQC - recover maternal weight (does not exclude rows)
+    \t fun_mBmiQC - bivariate plot of maternal height and weight, excludes rows
     \t fun_origin - parent(s) must be from selected countries")
 
 
@@ -426,85 +426,104 @@ cat(" there are ",nrow(dat), " rows remaining")
 # other name - pregCompl
 fun_ICDcodes = function(dat,icd_use) {
         # second argument is a vector of logical TRUE/FALSE values for ICD codes. example:
-        # icd_use = c(T,T,T,T,T,T,T)
+        # icd_use = c(T,T,T,T,T,T,T, T,T,T)
+        if(length(icd_use)!=10) {
+                warning("the length of icd_use is not equal to 10")
+                break
+        }
         
-cat("\t NOTE that:
-\t ICD-8  codes were used in 1969-1986 
-\t ICD-9  codes were used in 1987-1996
-\t ICD-10 codes were used in 1997+ 
-\t (there is a significant nonsynonymous overlap between ICD-8 and ICD-9)")
+cat("\t NOTE:
+\t - icd08  codes were used in 1969-1986 
+\t - icd09  codes were used in 1987-1996
+\t - icd10 codes were used in 1997+ 
+\t - there is a significant nonsynonymous overlap between ICD-8 and ICD-9 \n")
         
-cat("\n\t NOTE that:
-\t only ICD-10 codes will be used..
-\t ..thus all deliveries occuring before 1997 will be excluded
-\t ICD-09 option is not implemented yet") 
+cat("\n\t IMPORTANT:
+\t - only icd10 & icd09 will be used -> all pregs before 1987 will be EXCLUDED!
+\t - icd09 and icd10 codes do not match perfectly
+\t - icd08 codes are not implemented here \n") 
 
-# temporary! until ICD9 option will be implemented
-bad_rows = which(dat$AR<1997)
-dat = dat[-bad_rows,]
 
-cat("YEAR-REMOVAL STAGE: \n\t in total ",length(bad_rows),
-    " rows were removed \n\t and there are ",
-    nrow(dat), " rows remaining") 
+# dangerous! temporary! is it worth?!
+dat = dat[which(dat$AR>=1987),]
 
-icd10_codes = c("^O40","^O410","^O41[2-9]",
-                      "^O43","^O44","^O45","^O46")
-#       icd09_codes = c("^657","^6580","^658[4,8,9]",
-#                        "^656[0,5,7]|^7622","^6410|^6411","^6412","^641[2,3,8,9]")
-#        icd08_codes = c()
-                
-        icd_short = c("MuchAmnio","OligAmnio","AmnioMemb",
-                      "PlacGrowth","PlacPrevia","PlacAbrupt","Bleeding")
-        icd_long = c("Abnormally large amount of amniotic fluid",
-                     "Oligohydramnion",
-                     "Other amnion/membrane problems",
-                     "Abnormality in the placenta types",
-                     "Placenta praevia 2types",
-                     "Premature separation of the placenta (abruptio)",
-                     "Bleeding before delivery")
+cat("\n\t YEAR-REMOVAL STAGE: 
+    \t - in total",length(bad_rows),"rows were removed 
+    \t - and",nrow(dat),"rows are left remaining \n") 
 
+icd_codes = c("^O40",      # icd10: Abnormally large amount of amniotic fluid
+              "^O410",     # icd10: Oligohydramnion
+              "^O41[2-9]", # icd10: Other amnion and membrane problems
+              "^O43",      # icd10: Placentalt transfusionssyndrom, Missbildning, Patologiskt fastsittande, accreta/increta/percreta
+              "^O44",      # icd10: Placenta praevia, types
+              "^O45",      # icd10: Premature separation of the placenta (Placenta abruptio)
+              "^O46",      # icd10: Bleeding before delivery
+              "^641",      # icd09: Placenta previa, Abruptio placentae, Hemorrhage in pregnancy
+              "^657",      # icd09: Polyhydramnios
+              "^658")      # icd09: Oligohydramnios, PROM, other amniotic cavity and membranes problems
+
+icd_short = c("icd10_MuchAmnio",
+              "icd10_OligAmnio",
+              "icd10_AmnioMemb",
+              "icd10_PlacGrowth",
+              "icd10_PlacPrevia",
+              "icd10_PlacAbrupt",
+              "icd10_Bleeding",
+              "icd09_PreviaAbruptio",
+              "icd09_MuchAmnio",
+              "icd09_OligAmnioPROM")
+
+icd_long = c("Abnormally large amount of amniotic fluid",
+             "Oligohydramnion",
+             "Other amnion/membrane problems",
+             "Abnormality in the placenta types",
+             "Placenta praevia 2types",
+             "Premature separation of the placenta (abruptio)",
+             "Bleeding before delivery",
+             "PlacentaPrevia,AbruptioPlacentae,Hemorrhage in pregnancy",
+             "Polyhydramnios",
+             "Oligohydramnios,PROM,oth.amnion&membr.problms")
+        
+# other ideas:
+# "^656[0,5,7]|^7622"
+# ^641  Blödning i sen graviditet, för tidig avlossning av moderkakan och T föreligg ande moderkaka
+# Haemorrhagia in graviditate posteriore, abruptio placentae et placenta praevia 
+# ^642  Hypertoni som komplikation till graviditet, förlossning och barnsängs (-9 d)
+        
 #generate a report of exclusions to be used:        
-rep = data.frame(ICD_codes = icd10_codes,use_filter=icd_use,short=icd_short,description=icd_long)
+rep = data.frame(ICD_codes = icd_codes,use_filter=icd_use,short=icd_short,description=icd_long)
 
-cat("These ICD10 codes will be used as exclusion criteria: \n")
+cat("\n These ICD10 codes will be used as exclusion criteria: \n")
 print(rep)
 
 # leave only those which were marked to be used
-rep = rep[rep$use_filter,]
-
-# ^O40 - Abnormally large amount of amniotic fluid (-1d)
-# ^O410 - Oligohydramnion  (+4d ?) 
-# ^O41[2-9] - Other amnion and membrane problems
-# ^O43	Placentalt transfusionssyndrom, Missbildning, Patologiskt fastsittande, accreta/increta/percreta (-31 d)
-# ^O44	Placenta praevia, types... (-23 d)
-# ^O45	För tidig avlossning av placenta, types... (-29 d)  (abruptio)
-# ^O46	Blödning före förlossningen, types... (-15 d)
-# ^641  Blödning i sen graviditet, för tidig avlossning av moderkakan och T föreligg ande moderkaka
-#       Haemorrhagia in graviditate posteriore, abruptio placentae et placenta praevia 
-# ^642  Hypertoni som komplikation till graviditet, förlossning och barnsängs (-9 d)
-        
-
-#cat("ICD CODES:
-#    the following ICD codes will be searched in MDIAG and BDIAG columns:
-#    ",icd_codes)
-
+rep = rep[which(rep$use_filter),]
 
 tbl = rixs = cnt = NULL # table of effect sizes, exclusion rows, counts per year
 for (i in 1:nrow(rep)) {
         icd_code = rep$ICD_codes[i]
-        print(as.character(icd_code))
+        #print(as.character(icd_code))
         
         # which rows (pregnancies) have a problem
-        rix =  NULL; for(j in grep("^MDIAG|^BDIAG",colnames(dat))) rix=c(rix,grep(icd_code,dat[,j]))
+        rix = cds = NULL  # rix = row indexes; cds = actual codes
+        for(j in grep("^MDIAG|^BDIAG",colnames(dat))) {
+                rix_tmp = grep(icd_code,dat[,j])
+                rix=c(rix,rix_tmp)
+                cds = c(cds,unique(dat[rix_tmp,j]))
+                rm(rix_tmp)
+        }
+        # report the discovered matching patterns
+        print(sort(unique(cds)))
         
         # year-split of incidence (cumulative)
         phe = rep(0,nrow(dat)); phe[unique(rix)]=1
         cnt = rbind(cnt, table(dat$AR,phe)[,2]) # count
         
         coefs = coef(summary(lm(dat$GRDBS ~ phe)))
-        df = data.frame(condition=rep$short[i],N=length(rix),beta=round(coefs[2,1],1),pval=coefs[2,4])
+        df = data.frame(code=rep$ICD_codes[i],condition=rep$short[i],N=length(rix),
+                        beta=round(coefs[2,1],1),pval=coefs[2,4],stringsAsFactors = F)
         tbl = rbind(tbl,df)
-        rixs = c(rixs,rix)
+        rixs = unique(c(rixs,rix))
         rm(df,coefs,phe,rix)
 }
 
@@ -519,13 +538,15 @@ print(cnt)
 cat("ICD codes and their effect sizes on GestAge: \n")
         print(tbl)
         
-cat("ICD-exclusion stage: \n in total ",length(rixs), " will be removed") # selected for exclusion : 67 272
+cat("\n\t ICD-based exclusion stage: 
+    \t - in total",length(rixs), "rows will be removed \n")
         dat = dat[-rixs,]
-        cat(" there are ",nrow(dat), " rows remaining") 
-        
+cat("\t - and",nrow(dat),"rows are left remaining \n") 
+
         generate_year_counts(dat, "ICDcodes", F)
-        dat
+        return(dat)
 }
+
 
 fun_GAmiss = function(dat) {
         cat("MISSING GESTATIONAL AGE:
@@ -555,75 +576,590 @@ fun_GAdating = function(dat,ok_codes) {
         dat
 }
 
-fun_MHmiss = function(dat,low,upp) {
-        cat("REMOVE MISSING OR UNRELIABLE MATERNAL HEIGHT: \n")
-        cat("\t - rows with missing height will be removed \n")
-        cat("\t - rows with height <",low,"cm will be removed \n")
-        cat("\t - rows with height >",upp,"cm will be removed \n")
-        cat("\t - problem: MatHgh only available for years 1982-2012, so years 1973-1981 will be lost! \n")
-        cat("\t ..there are ",sum(dat$MLANGD=="")," rows withough matHgh value \n")
+
+fun_mHghQC = function(dat,low,upp,discordantClean,transferHeight) {
+        # USAGE:
+        # dat -                 data frame with columns [AR,MLANGD,lpnr_mor] in any order
+        # low -                 lower threshold for excluding height values (e.g., 135 cm)
+        # upp -                 upper threshold for excluding height values (e.g., 205 cm)
+        # discordantClean -     logical (TRUE/FALSE), whether mothers with multiple pregnancies 
+        #                       and very discordant height values between them should be swiped out
+        # transferHeight -      logical (TRUE/FALSE), whether missing height values should be 
+        #                       transfered from other pregnancies of the same mother (+/- 1 year)
         
-        # maternal height (set to missing before deleting later)
+        cat("REMOVE MISSING OR UNRELIABLE MATERNAL HEIGHT, TRANSFER FROM OTHER PREGS: \n")
+        cat("\t - note: values with missing height will be removed \n")
+        cat("\t - note: MatHgh only available for years 1982-2012, so years 1973-1981 will be lost! \n")
+        cat("\t - note: should be run only AFTER removing rows with missing mother ID \n")
+        
+        ########
+        ######## 1) DATA PREPARATION AND REFORMATING
+        ########
+        
+        # save the original column order
+        orig_clnms = colnames(dat)
+        
+        # save the original row-wise order
+        dat$original_order = seq(nrow(dat)) # to be restored after this block is done
+        
+        # set missing/emtpty height values to NA
         dat$MLANGD[which(dat$MLANGD=="")]=NA # maternal height must be present for adjustments
-        dat$MLANGD = as.numeric(dat$MLANGD)
         
-        cat(" full range of maternal height: ",paste(range(dat$MLANGD,na.rm=T),collapse="-"),"cm \n")
+        # make all values numeric
+        dat$MLANGD = as.numeric(dat$MLANGD) # ensure that values are numerical
+        
+        # for final reporting
+        n_missing_vals_start = sum(is.na(dat$MLANGD)) # for comparison at the end
+        
+        ########
+        ######## 2) SIMPLE CLEANING OF EXTREME VALUES
+        ########
+        
+        cat(" initial range of maternal height: ",paste(range(dat$MLANGD,na.rm=T),collapse="-"),"cm \n")
         
         sd_low = round(mean(dat$MLANGD,na.rm=T)-sd(dat$MLANGD,na.rm=T)*2,0)
         sd_upp = round(mean(dat$MLANGD,na.rm=T)+sd(dat$MLANGD,na.rm=T)*2,0)
-        cat(" +/-2SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
+        cat(" +/- 2SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
         
         sd_low = round(mean(dat$MLANGD,na.rm=T)-sd(dat$MLANGD,na.rm=T)*3,0)
         sd_upp = round(mean(dat$MLANGD,na.rm=T)+sd(dat$MLANGD,na.rm=T)*3,0)
-        cat(" +/-3SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
+        cat(" +/- 3SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
         
         sd_low = round(mean(dat$MLANGD,na.rm=T)-sd(dat$MLANGD,na.rm=T)*4,0)
         sd_upp = round(mean(dat$MLANGD,na.rm=T)+sd(dat$MLANGD,na.rm=T)*4,0)
-        cat(" +/-4SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
+        cat(" +/- 4SD range of maternal height: ",paste(sd_low,sd_upp,sep="-"),"cm \n")
         
-        cat(" selected range for inclusion: ",paste(low,upp,sep="-"),"cm \n")
-        cat(" number of rows to be removed: \t ")
-        print(paste("below:",sum(dat$MLANGD<low,na.rm=T),", above:",sum(dat$MLANGD>upp,na.rm=T),sep=""))
+        cat("\t selected range for inclusion:",paste(low,upp,sep="-"),"cm \n")
+        
+        # report
+        cat("\t\t",sum(dat$MLANGD<low,na.rm=T),"[too low] height values set to missing \n")
+        cat("\t\t",sum(dat$MLANGD>upp,na.rm=T),"[too high] height values set to missing \n")
         
         dat$MLANGD[which(dat$MLANGD<low)]=NA # suspicious-height threshold determined by Julius (also, no sib-similarity below this thr)
         dat$MLANGD[which(dat$MLANGD>upp)]=NA # almost incredible values
         
-        cat(" - in total ",sum(is.na(dat$MLANGD)),"rows will be removed \n")
-        dat = dat[which(!is.na(dat$MLANGD)),]
-        cat(" - in total ",nrow(dat),"left remaining \n")
-        cat(" - range of remaining maternal height: ",paste(range(dat$MLANGD,na.rm=T),collapse="-"),"cm \n")
+        ########
+        ######## 3) DELETE VERY DICORDANT HEIGHTS
+        ########
         
-        generate_year_counts(dat, "MHmiss", F)
-        dat
+        if (discordantClean==TRUE) {
+                
+                # when maternal height values from different pregnancies are too discordant
+                cat("\t selected option:  discordantClean=TRUE \n")
+                
+                # assign spec identifiers
+                dat$ids_hghs = paste(dat$lpnr_mor,dat$MLANGD,sep="_")
+                
+                repeat {
+                        sub = dat[which(!is.na(dat$MLANGD)),c("lpnr_mor","MLANGD")]
+                        
+                        # prepare the working dataframe
+                        df = as.data.frame(group_by(sub,lpnr_mor) %>% 
+                                                   summarise(n=n(),mnH=mean(MLANGD),
+                                                             miH=min(MLANGD),mxH=max(MLANGD)) %>% ungroup())
+                        # range of height values for each mother
+                        df$dif = df$mxH - df$miH
+                        
+                        # first tier - when there are only two height values
+                        bad_moms_1_temp = df[which( (df$n == 2) & (df$dif >= 10) ),]  # PARAMETER !
+                        bad_moms_1_tempA = bad_moms_1_temp[,c("lpnr_mor","miH")]
+                        bad_moms_1_tempB = bad_moms_1_temp[,c("lpnr_mor","mxH")]
+                        colnames(bad_moms_1_tempA)=c("lpnr_mor","MLANGD")
+                        colnames(bad_moms_1_tempB)=c("lpnr_mor","MLANGD")
+                        bad_moms_1 = rbind(bad_moms_1_tempA,bad_moms_1_tempB)
+                        
+                        # cleanup
+                        rm(bad_moms_1_temp,bad_moms_1_tempA,bad_moms_1_tempB)
+                        
+                        # second tier - when there are three or more values              
+                        cand_mom_ids = unique(df$lpnr_mor[which((df$n>2)&(df$dif>10))])   # PARAMETER !
+                        sub = sub[which(sub$lpnr_mor %in% cand_mom_ids),] # reduce to improve speed
+                        
+                        # find which height value to remove for each mom
+                        cum = list() # cummulator
+                        num = 0 # counter
+                        for (id in cand_mom_ids) {
+                                num = num + 1
+                                vls = sub[which(sub$lpnr_mor == id),"MLANGD"]
+                                vls = sort(vls[which(!is.na(vls))]) # very important to sort !
+                                # estimate left and right two-value distances
+                                dif_low = vls[2] - vls[1]
+                                dif_upp = vls[length(vls)] - vls[length(vls)-1]
+                                min_val = vls[1]
+                                max_val = vls[length(vls)]
+                                nm_vals = length(vls)
+                                cum[[num]] = data.frame(id,nm_vals,min_val,max_val,dif_low,dif_upp,stringsAsFactors = F)
+                                rm(vls,dif_low,dif_upp,min_val,max_val,nm_vals)
+                        }
+                        
+                        cum = do.call(rbind.data.frame, cum) # combine list to dataframe
+                        
+                        # cleanup
+                        rm(df,id,cand_mom_ids,num)
+                        
+                        if (nrow(cum)>0) {
+                                bad_moms_2 = cum[which(cum$dif_low > cum$dif_upp),c("id","min_val")]
+                                bad_moms_3 = cum[which(cum$dif_low < cum$dif_upp),c("id","max_val")]
+                                colnames(bad_moms_2)=c("lpnr_mor","MLANGD")
+                                colnames(bad_moms_3)=c("lpnr_mor","MLANGD")
+                        } else {
+                                bad_moms_2 = bad_moms_3 = NULL
+                        }
+                        
+                        cand_bad_ids = unique(cum$id[which(cum$dif_low == cum$dif_upp)])
+                        bad_moms_4 = sub[which(sub$lpnr_mor %in% cand_bad_ids),]
+                        colnames(bad_moms_4)=c("lpnr_mor","MLANGD")
+                        
+                        # combine
+                        bad_moms_all = rbind(bad_moms_1,bad_moms_2,bad_moms_3,bad_moms_4)
+                        bad_ids_hghs = unique(paste(bad_moms_all$lpnr_mor,bad_moms_all$MLANGD,sep="_"))
+                        
+                        
+                        bad_hgh_rix = which(dat$ids_hghs %in% bad_ids_hghs)
+                        
+                        
+                        if (length(bad_hgh_rix)==0) break
+                        
+                        # set to missing
+                        dat$MLANGD[bad_hgh_rix] = NA  # set to missing (as unreliable)
+                        
+                        # report
+                        cat("\t\t",length(bad_hgh_rix),"height values set to missing \n")
+                        # cleanup
+                        rm(bad_hgh_rix,bad_ids_hghs,cand_bad_ids,sub,cum)
+                        rm(bad_moms_1,bad_moms_2,bad_moms_3,bad_moms_4,bad_moms_all)
+                        
+                }
+        }     
+        
+        ########
+        ######## 3) TRANSFER VALUES FROM OTHER PREGNENCIES
+        ########
+        
+        # when mother has many pregnancies, at some pregnancies she might have missing height data.
+        # in such instances, height values could be transfered from her other pregnancies.
+        
+        # transferHeight function
+        if(transferHeight==TRUE) {
+                cat("\t selected option:  transferHeight=TRUE \n")
+                # note: height transfer will not be done for birth years <1982 even though it is possible
+                
+                # unique identifier of mother and her pregnancy year
+                dat$midAR = paste(dat$lpnr_mor,dat$AR,sep="_")
+                
+                # which years have absolutely no height data
+                tbl = as.matrix(table(is.na(dat$MLANGD),dat$AR))
+                noHgh_years = as.numeric(names(which(tbl[1,]==0)))
+                
+                # two types of rows of interest (source of data, and the target)
+                filed_height_rix = which( (!is.na(dat$MLANGD))&(!dat$AR %in% noHgh_years)) # with height in good years
+                empty_height_rix = which( (is.na(dat$MLANGD))&(!dat$AR %in% noHgh_years)&
+                                                  (dat$lpnr_mor %in% dat$lpnr_mor[filed_height_rix])) # no height in good years with potential to restore
+                filed_height_rix = which( (!is.na(dat$MLANGD))&(!dat$AR %in% noHgh_years)&
+                                                  (dat$lpnr_mor %in% dat$lpnr_mor[empty_height_rix])) # refine: only useful
+                
+                
+                # rows
+                wrk_rix = c(filed_height_rix, empty_height_rix) # working rows used in manipulations
+                oth_rix = seq(nrow(dat))[which(! seq(nrow(dat)) %in% wrk_rix)] # other rows
+                # datasets
+                wrk_dat = dat[wrk_rix,] # data that WILL be used in manipulations
+                oth_dat = dat[oth_rix,] # data that will NOT be used in manipulations
+                rm(wrk_rix,oth_rix)
+                
+                # extract two subsets (target and source) to facilitate the running time
+                noH = dat[empty_height_rix,c("AR","lpnr_mor")]  # no height
+                isH = dat[filed_height_rix,c("AR","lpnr_mor","MLANGD")] # with height
+                #sum(is.na(isH$MLANGD)) # should be 0
+                
+                # cleanup
+                rm(filed_height_rix,empty_height_rix,noHgh_years,tbl)
+                
+                fun_transf = function(wrk_dat,noH,isH,ofs,ok_dif) {
+                        # create a list with recovered maternal heights
+                        yrs = sort(unique(noH$AR),decreasing = T) # years of interest
+                        #ofs = ofs # mother with plus/minus this number of years is assumed to have the same height)
+                        #ok_dif = ok_dif # allowed difference between two heights of the same mother
+                        lst = list() # accumulator of imputed (transfered) height values
+                        cnt = 0 # counter
+                        for (yr in yrs) {
+                                cnt = cnt + 1 # reset the counter
+                                noH_momIDs = unique(noH$lpnr_mor[which(noH$AR==yr)]) # these moms have no height values
+                                # subset a dataframe that contains the same mothers of similar age, but WITH height data:
+                                tmp = isH[which((isH$AR %in% (yr-ofs):(yr+ofs))&(isH$lpnr_mor %in% noH_momIDs)),]
+                                df = group_by(tmp,lpnr_mor) %>% summarise(n=n(),mnH=mean(MLANGD),miH=min(MLANGD),mxH=max(MLANGD)) %>% ungroup()
+                                #table(df$n) # how many height values how many mothers have
+                                df$mnH = round(df$mnH,0) # to avoid non-integer values
+                                df$dif = df$mxH - df$miH # difference in max and min reported heights
+                                #table(df$dif) # the number of mothers with specific range of height values
+                                #sum(is.na(df$mnH)) # should be 0
+                                df$mnH[which(df$dif>ok_dif)] = NA # unreliable values
+                                if(nrow(df)>0) {
+                                        df = data.frame(midAR=paste(df$lpnr_mor,yr,sep="_"),mnH=df$mnH,stringsAsFactors = F)
+                                        lst[[cnt]] = df
+                                }
+                                rm(noH_momIDs,tmp,df)
+                        }
+                        rm(cnt,ofs,yrs,yr)
+                        newH = do.call(rbind.data.frame, lst) # combine list to dataframe
+                        tmp = merge(wrk_dat,newH,by="midAR",all.x=T) 
+                        # rows where original missing height should be replaced with height from other pregnancies
+                        repl_rix = which((is.na(tmp$MLANGD))&(!is.na(tmp$mnH))) #  replacement rows
+                        tmp[repl_rix,"MLANGD"] = tmp[repl_rix,"mnH"] # replace missing values
+                        tmp = tmp[order(tmp$original_order),] # restore order
+                        tmp = tmp[,-grep("mnH",colnames(tmp))]
+                        cat("\t\t",length(repl_rix),"missing height values recovered \n")
+                        return(tmp)
+                        rm(tmp,newH,repl_rix)
+                } # end of inner function
+                
+                # transfer values using different offsets. couple of times!
+                wrk_dat = fun_transf(wrk_dat,noH,isH,ofs=5,ok_dif=2)  # settings!
+                wrk_dat = fun_transf(wrk_dat,noH,isH,ofs=0,ok_dif=2)  # settings!
+                
+                # possible parameter settings (for offest in birth year of the child):
+                # offset = 0,  recovered height values (rows) = 1281
+                # offset = 1,  recovered height values (rows) = 32628
+                # offset = 2,  recovered height values (rows) = 124431
+                # offset = 3,  recovered height values (rows) = 187935
+                # offset = 4,  recovered height values (rows) = 225131
+                # offset = 5,  recovered height values (rows) = 247558
+                # offset =20,  recovered height values (rows) = 292315
+                # but avoid using very large offest, not to transfer height of very young females to very tall ones
+                #if ofs=20 and then ofs=0 ->  52 more values are recovered
+                
+                # reassemble the original dataframe with transfered height values
+                dat = rbind(wrk_dat,oth_dat)
+                
+                # cleanup
+                rm(wrk_dat,oth_dat,noH,isH)
+                
+        } # end of if
+        
+        n_missing_vals_end = sum(is.na(dat$MLANGD)) # for comparison 
+        n_difference = n_missing_vals_start - n_missing_vals_end
+        gained_removed = ifelse(n_difference>0,"gained","removed")
+        cat(" - in total,",n_difference,"height values will be",gained_removed," \n")
+        dat = dat[which(!is.na(dat$MLANGD)),]
+        cat(" - in total,",nrow(dat),"rows are left \n")
+        
+        generate_year_counts(dat, "mHghQC", F)
+        
+        # restore original order
+        dat = dat[order(dat$original_order),]
+        dat = dat[,orig_clnms]
+        rm(orig_clnms)
+        return(dat)
 }
 
-fun_mHghWgh = function(dat) {
-        cat("MATERNAL HEIGHT-WEIGHT BIVARIATE ANOMALIES: \n")
+
+
+
+
+
+
+
+fun_mWghQC = function(dat,duringPregTransf) {
+        # USAGE:
+        # dat -  data frame with columns [AR,MVIKT,MVIKTFV,lpnr_mor] in any order
+        # duringPregTransf - should MVIKTFV values be used to guess missing MVIKT
+        
+        cat("TRANSFER MISSING MATERNAL WEIGHT FROM OTHER PREGS (and cols): \n")
+        cat("\t - note: values with missing weight will NOT be removed \n")
+        cat("\t - note: MatWgh not available for years 1990-1991 \n")
+        cat("\t - note: should be run only AFTER removing rows with missing mother ID \n")
+        
+        ########
+        ######## 1) META
+        ########
+        
+        # save the original column order
+        orig_clnms = colnames(dat)
+        
+        # save the original row-wise order
+        dat$original_order = seq(nrow(dat)) # to be restored after this block is done
+        
+        # for final reporting
+        n_missing_vals_start = sum(is.na(dat$MVIKT)) # for comparison at the end
+        
+        ########
+        ######## 2) TRANSFER VALUES FROM OTHER PREGNENCIES
+        ########
+        
+        # when mother has many pregnancies, at some pregnancies she might have missing weight data.
+        # in such instances, weight values could be transfered from her other pregnancies.
+        
+        # unique identifier of mother and her pregnancy year
+        dat$midAR = paste(dat$lpnr_mor,dat$AR,sep="_")
+        
+        # two types of rows of interest (source of data, and the target)
+        filed_weight_rix = which(!is.na(dat$MVIKT)) # with height in good years
+        empty_weight_rix = which( (is.na(dat$MVIKT))&(dat$lpnr_mor %in% dat$lpnr_mor[filed_weight_rix])) # no weight but with potential to restore
+        filed_weight_rix = which( (!is.na(dat$MVIKT))&(dat$lpnr_mor %in% dat$lpnr_mor[empty_weight_rix])) # refine: only useful
+        
+        # rows
+        wrk_rix = c(filed_weight_rix, empty_weight_rix) # working rows used in manipulations
+        oth_rix = seq(nrow(dat))[which(! seq(nrow(dat)) %in% wrk_rix)] # other rows
+        # datasets
+        wrk_dat = dat[wrk_rix,] # data that WILL be used in manipulations
+        oth_dat = dat[oth_rix,] # data that will NOT be used in manipulations
+        rm(wrk_rix,oth_rix)
+        
+        # extract two subsets (target and source) to facilitate the running time
+        noW = dat[empty_weight_rix,c("AR","lpnr_mor")]  # no weight
+        isW = dat[filed_weight_rix,c("AR","lpnr_mor","MVIKT")] # with weight
+        #sum(is.na(isW$MVIKT)) # should be 0
+        
+        # cleanup
+        rm(filed_weight_rix,empty_weight_rix)
+        
+        fun_transf = function(wrk_dat,noW,isW,ofs,ok_dif) {
+                # create a list with recovered maternal weights
+                yrs = sort(unique(noW$AR),decreasing = T) # years of interest
+                #ofs = ofs # mother with plus/minus this number of years is assumed to have the same weight)
+                #ok_dif = ok_dif # allowed difference between two weights of the same mother
+                lst = list() # accumulator of imputed (transfered) height values
+                cnt = 0 # counter
+                for (yr in yrs) {
+                        cnt = cnt + 1 # reset the counter
+                        noW_momIDs = unique(noW$lpnr_mor[which(noW$AR==yr)]) # these moms have no weight values
+                        # subset a dataframe that contains the same mothers of similar age, but WITH weight data:
+                        tmp = isW[which((isW$AR %in% (yr-ofs):(yr+ofs))&(isW$lpnr_mor %in% noW_momIDs)),]
+                        df = group_by(tmp,lpnr_mor) %>% summarise(n=n(),mnW=mean(MVIKT),miW=min(MVIKT),mxW=max(MVIKT)) %>% ungroup()
+                        #table(df$n) # how many weight values how many mothers have
+                        df$mnW = round(df$mnW,0) # to avoid non-integer values
+                        df$dif = df$mxW - df$miW # difference in max and min reported weights
+                        #table(df$dif) # the number of mothers with specific range of weight values
+                        #sum(is.na(df$mnW)) # should be 0
+                        df$mnW[which(df$dif>ok_dif)] = NA # unreliable values
+                        if(nrow(df)>0) {
+                                df = data.frame(midAR=paste(df$lpnr_mor,yr,sep="_"),mnW=df$mnW,stringsAsFactors = F)
+                                lst[[cnt]] = df
+                        }
+                        rm(noW_momIDs,tmp,df)
+                }
+                rm(cnt,ofs,yrs,yr)
+                newW = do.call(rbind.data.frame, lst) # combine list to dataframe
+                tmp = merge(wrk_dat,newW,by="midAR",all.x=T) 
+                # rows where original missing weight should be replaced with weight from other pregnancies
+                repl_rix = which((is.na(tmp$MVIKT))&(!is.na(tmp$mnW))) #  replacement rows
+                tmp[repl_rix,"MVIKT"] = tmp[repl_rix,"mnW"] # replace missing values
+                tmp = tmp[order(tmp$original_order),] # restore order
+                tmp = tmp[,-grep("mnW",colnames(tmp))]
+                cat("\t\t",length(repl_rix),"missing weight values recovered \n")
+                return(tmp)
+                rm(tmp,newW,repl_rix)
+        } # end of inner function
+        
+        # transfer values using different offsets. couple of times!
+        wrk_dat = fun_transf(wrk_dat,noW,isW,ofs=5,ok_dif=10)  # settings!
+        wrk_dat = fun_transf(wrk_dat,noW,isW,ofs=0,ok_dif=5)  # settings!
+        
+        # reassemble the original dataframe with transfered height values
+        dat = rbind(wrk_dat,oth_dat)
+        
+        # cleanup
+        rm(wrk_dat,oth_dat,noW,isW)
+        
+        n_missing_vals_end = sum(is.na(dat$MVIKT)) # for comparison 
+        n_difference = n_missing_vals_start - n_missing_vals_end
+        cat(" - in total,",n_difference,"weight values will be recovered \n")
+        
+        
+        if (duringPregTransf==TRUE) {
+                
+                cat("\t selected option:  duringPregTransf=TRUE \n")
+                #note: 1982-1989 MVIKTF values vere truncated to be <100 kg
+                
+                fun_hexbplot = function(X,Y,LOG,XLAB,YLAB) {
+                        h=hexbin(Y~X); x=h@xcm; y=h@ycm; s=h@count
+                        plot(x,y,pch=1,cex=log(s,LOG)+0.2,xlab=XLAB,ylab=YLAB,
+                             xlim=range(X,na.rm=T),ylim=range(Y,na.rm=T))
+                }
+                fun_hexbplot(dat$MVIKT,dat$MVIKTFV,200,"matWgh_beforePreg (MVIKT)",
+                             "matWgh_duringPreg (MVIKTFV)")
+                abline(-15,1); abline(50,1)
+                
+                # temporary modify the dataset 
+                dat$par3fctr = dat$PARITET
+                dat$par3fctr[which(dat$par3fctr>3)] = 3
+                dat$par3fctr = as.factor(dat$par3fctr)
+                dat$twinsing = dat$BORDF2
+                dat$twinsing = as.factor(dat$twinsing)
+                
+                # model on the dataset without obvious outliers
+                full_ix = which( (dat$MVIKTFV<(dat$MVIKT+50))&(dat$MVIKTFV>(dat$MVIKT-15)))
+                sub = dat[full_ix,]
+                mod = lm(MVIKT ~ poly(MVIKTFV,2) + poly(AR,2) + poly(MALDER,2) + par3fctr + twinsing, data = sub)
+        
+                # split original data into "full" and "nonfull"        
+        rix = which((!is.na(dat$PARITET))&(!is.na(dat$AR))&(!is.na(dat$MVIKTFV))&(!is.na(dat$MALDER))&(!is.na(dat$BORDF2)))
+        part1 = dat[rix,]
+        part2 = dat[-rix,]
+        
+        # predict MVIKT values where possible, return to original data structure
+        ys = as.numeric(predict(mod,newdata = part1))
+        part1$pred_MVIKT = ys
+        part2$pred_MVIKT = NA
+        dat = rbind(part1,part2)
+                
+        fun_hexbplot(dat$MVIKT,dat$pred_MVIKT,200,"matWgh_beforePreg_real","matWgh_beforePreg_predicted")
+        abline(0,1)
+        
+
+        n_vals_gained = sum((is.na(dat$MVIKT))&(!is.na(dat$pred_MVIKT)))
+        vals_gained_rix = which((is.na(dat$MVIKT))&(!is.na(dat$pred_MVIKT)))
+        cat("\t\t",n_vals_gained,"maternal weight values were recovered using MVIKTFV \n")
+        
+        hist(dat$pred_MVIKT[vals_gained_rix],breaks=100,col="grey",
+             xlab="new (recovered) MVIKT values",main="")
+        
+        dat$MVIKT[vals_gained_rix] = as.integer(round(dat$pred_MVIKT[vals_gained_rix],0))
+        
+        } # end of if
+        
+        
+        #generate_year_counts(dat, "mWghQC", F)  # this was only a helper cleaning, thus no need for reporting
+        
+        # restore original order
+        dat = dat[order(dat$original_order),]
+        dat = dat[,orig_clnms]
+        rm(orig_clnms)
+        return(dat)
+}
+
+head(dat)
+
+
+fun_mBmiQC = function(dat) {
+        cat("MATERNAL HEIGHT-WEIGHT BIVARIATE ANOMALIES (BMI): \n")
+        cat("\t note: ",round(mean(is.na(dat$MVIKT))*100),"% of WEIGHT values are missing \n",sep="")
+        
+        ########
+        ######## 1) META
+        ########
+        
+        # save the original column order
+        orig_clnms = colnames(dat)
+        
+        # save the original row-wise order
+        dat$original_order = seq(nrow(dat)) # to be restored after this block is done
         
         # a function which plots bivariate plot without the time consumtion
         fun_hexbplot = function(X,Y,LOG,XLAB,YLAB) {
                 h=hexbin(Y~X); x=h@xcm; y=h@ycm; s=h@count
-                plot(x,y,pch=1,cex=log(s,LOG),xlab=XLAB,ylab=YLAB,
+                plot(x,y,pch=1,cex=log(s,LOG)+0.2,xlab=XLAB,ylab=YLAB,
                      xlim=range(X,na.rm=T),ylim=range(Y,na.rm=T))
         }
-        fun_hexbplot(dat$MLANGD,dat$MVIKT,200,"Maternal height","Maternal weight")
-        #at = 10^(1:4); legend(100,150,legend = at,pch = 1, pt.cex = log(at,200))
-        #abline(v=c(125,200),h=c(30,175),col="blue")
-        #bad1=which( (dat$MLANGD<125)|(dat$MLANGD>200)|(dat$MVIKT>175)|(dat$MVIKT<30) )
-        #points(MVIKT~MLANGD,data=dat[bad1,],col="red",pch=19,cex=0.5)
         
-        abline(-485,4,col="blue")
-        bad2=which(  dat$MVIKT > (dat$MLANGD*4 - 485))
-        points(MVIKT~MLANGD,data=dat[bad2,],col="red",pch=19,cex=0.5)
+        ########
+        ######## 2) ESTIMATE BMI AND ITS THRESHOLDS
+        ########
+        
+        # BMI
+        dat$bmi = dat$MVIKT / (dat$MLANGD / 100)^2
+        
+        # TRESHOLDS BY AGE
+        ages = 14:48  # ages with reasonable numbers of individuals
+        prbs = c(0.01,0.05,seq(0.1,0.9,0.1),0.95,0.99) # percentiles
+        qnts = matrix(NA,nr=length(ages),nc=length(prbs))
+        for (i in 1:length(ages)) {
+                age = ages[i]
+                bmis = dat$bmi[which(dat$MALDER==age)]
+                qnts[i,] = as.numeric(quantile(bmis,probs = prbs,na.rm = T))
+        }
+        
+        # VISUALIZE
+        plot(NA,xlim=range(ages),ylim=c(min(qnts)-2,max(qnts)+2),
+             xlab="maternal age",ylab="maternal BMI",main="determine thresholds for BMI")
+        for (i in 1:length(prbs)) points(qnts[,i]~ages,type="l",col="grey")
+        text(x = rep(min(ages),length(prbs)),y = qnts[1,],labels = prbs,pos = 4,cex = 0.5)
+        text(x = rep(max(ages),length(prbs)),y = qnts[nrow(qnts),],labels = prbs,pos = 2,cex = 0.5)
+        
+        # smooth extreme quantiles
+        mod_upp = loess(qnts[,length(prbs)]~ages,span = 0.5) # 99 percentile
+        mod_low = loess(qnts[,1]~ages,span = 0.5) # 1 percentile
+        df = data.frame(ages,stringsAsFactors = F)
+        df$bmi_upp = predict(mod_upp,df) 
+        df$bmi_low = predict(mod_low,df) 
+        # draw smoothed percentiles 1 and 99
+        points(df$bmi_upp ~ df$ages,type="l",col="red")
+        points(df$bmi_low ~ df$ages,type="l",col="red")
+        
+        # add offset
+        df$bmi_upp = df$bmi_upp + 2
+        df$bmi_low = df$bmi_low - 2
+        # draw smoothed percentiles 1 and 99  with offset
+        points(df$bmi_upp ~ df$ages,type="l",col="blue")
+        points(df$bmi_low ~ df$ages,type="l",col="blue")
+        
+        # add thresholds to the data-frame
+        dat = merge(dat,df,by.x="MALDER",by.y="ages",all.x=T)
+        
+        # note, that very extreme maternal age will get no threshold, thus will not be removed
+        
+        
+        ########
+        ######## 3) CLEANING
+        ########
+        
+        fun_hexbplot(dat$MLANGD,dat$MVIKT,200,"Maternal height","Maternal weight")
+        
+        # hard-set bmi threshold (ONLY FOR COMPARISON)
+        high_bmi_ix = which(dat$bmi>40)
+        low_bmi_ix = which(dat$bmi<15)
+        points(MVIKT~MLANGD,data=dat[high_bmi_ix,],col="orange",pch=19,cex=1)
+        points(MVIKT~MLANGD,data=dat[low_bmi_ix,],col="cornflowerblue",pch=19,cex=1)
+        rm(high_bmi_ix,low_bmi_ix)
+        
+        # mixup mistakes (height = weight)
+        bad0 = which(dat$MLANGD == dat$MVIKT)
+        points(MVIKT~MLANGD,data=dat[bad0,],col="green",pch=19,cex=1.2)
+        
+        # hardset outlier thresholds
+        
+        abline(-475,4,col="blue")
+        bad1=which(  dat$MVIKT > (dat$MLANGD*4 - 475))
+        points(MVIKT~MLANGD,data=dat[bad1,],col="red",pch=19,cex=0.7)
 
-        cat("rows selected for exclusion: ", length(bad2))        
-        if(length(bad2)>0) dat=dat[-bad2,]
+        abline(1100,-5,col="blue")
+        bad2=which(  dat$MVIKT > (dat$MLANGD*(-5) + 1100))
+        points(MVIKT~MLANGD,data=dat[bad2,],col="red",pch=19,cex=0.7)
+        
+        abline(-730,4,col="blue")
+        bad3=which(  dat$MVIKT < (dat$MLANGD*4 - 730))
+        points(MVIKT~MLANGD,data=dat[bad3,],col="red",pch=19,cex=0.7)
+        
+        ## age-dependent BMI thresholds and outliers
+        bad_upp = which(dat$bmi>dat$bmi_upp)
+        bad_low = which(dat$bmi<dat$bmi_low)
+        points(y=dat$MVIKT[bad_upp],x=dat$MLANGD[bad_upp],pch=19,cex=0.3)
+        points(y=dat$MVIKT[bad_low],x=dat$MLANGD[bad_low],pch=19,cex=0.3)
+        
+        # acummulate all bad rows
+        bad_row_indx = unique(c(bad0,bad1,bad2,bad3,bad_upp,bad_low))
+        
+        # remove bad rows
+        cat("\t",length(bad_row_indx),"rows will be removed \n")
+        if(length(bad_row_indx)>0) dat=dat[-bad_row_indx,]
         cat("\n rows remaining: ", nrow(dat))        
         
-        generate_year_counts(dat, "mHghWgh", F)
-        dat
+        # report
+        generate_year_counts(dat, "mBmiQC", F)
         
+        # restore original order
+        dat = dat[order(dat$original_order),]
+        dat = dat[,orig_clnms]
+        rm(orig_clnms)
+        return(dat)
 }
+
+# other ways to identify overweight / low weight
+#F50 R630 - anorexy
+#E66 - obesity
+#sub = dat[grep("^E66",dat$MDIAG2),c("MLANGD","MVIKT")]
+#points(x=sub$MLANGD,y=sub$MVIKT,pch=19,col="blue")
+
 
 fun_origin = function(dat,orig,countryBlocks,parentVariabl,strict) {
         # orig = original uncleaned dataset
