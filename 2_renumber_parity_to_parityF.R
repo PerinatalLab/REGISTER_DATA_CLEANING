@@ -22,7 +22,8 @@ cat("\n\t RECONSTRUCT PREGNNACY-WISE PARITY VALUES (aka PARITET_F)
 
 # for restoring order
 dat$sq = seq(nrow(dat)) # to restore the original order in the end
-        
+#thr_d_low=31
+#thr_d_upp=300
 
 ###############
 ############### input check
@@ -31,7 +32,7 @@ dat$sq = seq(nrow(dat)) # to restore the original order in the end
 required_columns = c("AR","BFODDAT","BORDF2","BORDNRF2","PARITET","lpnr_mor","lpnr_BARN","sq")
 if (any(!required_columns %in% colnames(dat))) { warning("necessary columns were not found!"); break }
 if (!thr_d_low %in% 0:100)  warning("very strange threshold thr_d_low was chosen!")
-if (thr_d_upp %in% 0:200)  warning("very strange threshold thr_d_upp was chosen!")
+if (thr_d_upp %in% 0:150)  warning("very strange threshold thr_d_upp was chosen!")
 if (thr_d_upp %in% 500:100000)  warning("very inefficient threshold thr_d_upp was chosen!")
 if (thr_d_low >= thr_d_upp)  warning("thr_d_low is higher than thr_d_upp!")
 
@@ -234,7 +235,7 @@ dat$day[which(is.na(dat$day))] = "15" # assign default. won't cause problems
 dat$bfoddat = paste(dat$year,dat$month,dat$day,sep="")
 dat$bfoddat = ymd(dat$bfoddat,quiet = T)
 
-if (any(is.na(dat$bfoddat))) warning("dat$bfoddat contains missing dates (row ~ 215)")
+if (any(is.na(dat$bfoddat))) warning("dat$bfoddat contains missing dates (row ~ 236)")
 
 ###############
 ############### split the data
@@ -248,13 +249,14 @@ multi = dat[multimom_rix,] # mothers with at least two children
 singl = dat[singlmom_rix,] # mothers with only one child in the mfr
 
 
-
 ###############
 ############### once-in-the-register mothers (simple case)
 ###############
 
 ####   "singl" mothers keep their original parity values
 singl$PARITET_F = singl$PARITET  # F = forlossning (pregnancy-wise-parity)
+
+# note: this is not exactly correct, as there might have been twin pregs during no mfr-follow-up
 
 # idea for the future:
 # table(singl$AR,par234567.. = singl$PARITET>1) # potential reaosn of excluding PARITET>1 & AR> ~1990
@@ -295,8 +297,9 @@ multi = as.data.frame(multi)
 #bad_rix = which(multi$lpnr_mor %in% bad_mids)
 #multi[bad_rix,][1:10,]
 
+
 # mask some parities as unreliable
-ix = which( (multi$bddif>thr_d_low)&(multi$bddif<thr_d_upp) )
+ix = which( (multi$bddif>thr_d_low)&(multi$bddif<thr_d_upp) ) # assuming ordering: lpnr_mor,bfoddat
 ix = ix-1 # one parity above (currently it will be named as different parity value)
 prob = multi[ix,] # problematic rows of the multi dataset
 parities = 1:max(multi$parity) # all possible parities

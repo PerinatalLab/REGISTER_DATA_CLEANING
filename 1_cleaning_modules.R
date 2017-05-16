@@ -13,6 +13,7 @@ cat("NEW UPDATES!
     \t + ICD code choice ooption
     \t + PROM
     \t + matHghQC flexible thresholds, value-transfer from other pregs, discordance filters
+    \t + fun_matPrecond now accepts the argument with maternal-precondition names
     \t + maternal Hgh-Wgh bivar filter with BMI-acording-to-age")
 
 cat("\n UNFIXED ERRORS:
@@ -202,65 +203,56 @@ number of rows remaining = ", nrow(dat))
         dat 
 }
 
-fun_matPrecond = function(dat) {
-                cat("MATERNAL PRECONDITIONS
-    exclude pregnancies where mother has an ongoing medical condition,
-    which is found in one of the MFR's special columns
-    ")
-                
-                preconditions = c("NJURSJUK","DIABETES","EPILEPSI","ULCOLIT","SLE","HYPERTON") # left unused: "URINVINF", "ASTMA"
-                
-                # estimate prevalence of each condition, as well as effect size on GestAge
-                tbl = NULL
-                for (colname in preconditions) {
-                        precond = as.numeric(!is.na(dat[,colname]))
-                        n_ill = sum(precond==1)
-                        coefs = coef(summary(lm(dat$GRDBS ~ precond)))
-                        df = data.frame(condition=colname,N=n_ill,beta=coefs[2,1],pval=coefs[2,4])
-                        tbl = rbind(tbl,df)
-                        rm(df,precond,n_ill,coefs)
-                }
 
-#  silenced section below is now transfered into a separate module
-#                # add  PREVIOUS C-SECTION
-#                table(dat$TSECTIO,useNA="a")
-#                precond = rep(0,nrow(dat))
-#                precond[which(dat$TSECTIO==1)] = 1  # note, some previous CS might still remain (missing data)
-#                coefs = coef(summary(lm(dat$GRDBS ~ precond))); coefs
-#                df = data.frame(condition="TSECTIO",N=sum(precond==1),beta=coefs[2,1],pval=coefs[2,4])
-#                tbl = rbind(tbl,df); rm(df)
-                
-                cat("
-    pregnancies with the following maternal medical conditions will be excluded from the MFR:
-    ")
-                print(tbl)
-                cat("(beta and pval are estimated as an effect on gestational age)
-    ")
-                
-                
-                
-                # remove all pregnancies with preconditions from the data
-                sub = dat[,preconditions]
-                
-                #  silenced line below is now transfered into a separate module
-                # sub$prevCS = NA; sub$prevCS[which(precond==1)] = 1
-                
-                bad_rows = apply(sub,1,function(x) sum(!is.na(x))); table(bad_rows); sum(bad_rows>0)
-                
-                cat("
-    number of pregnancies with a specific number of maternal medical conditions:
-    ")
-                print(table(bad_rows))
-                
-                dat = dat[which(bad_rows==0),]; dim(dat) 
-                
-                cat("
-number of rows selected for exclusion:", sum(bad_rows>0),"
-number of rows remaining:",nrow(dat))
-                
-                generate_year_counts(dat, "matPrecond", F)
-                dat
+
+
+fun_matPrecond = function(dat,preconditions) {
+        
+        cat("\n MATERNAL PRECONDITIONS:
+            \t exclude pregnancies at which mother has an ongoing medical condition, 
+            \t which is found in one of the MFR's special columns:
+            \t \"NJURSJUK\",\"DIABETES\",\"EPILEPSI\",\"ULCOLIT\",\"SLE\",\"HYPERTON\",\"URINVINF\",\"ASTMA\"
+            \t (reccomended to use at least \"DIABETES\", which reduces gestAge by a week)\n")
+
+        #  safety guard
+        possible_preconditions = c("NJURSJUK","DIABETES","EPILEPSI","ULCOLIT","SLE","HYPERTON","URINVINF","ASTMA")
+        if (any(!preconditions %in% possible_preconditions)) {warning("unknown condition selected!"); break }
+
+        # estimate prevalence of each condition, as well as effect size on GestAge
+        tbl = NULL
+        for (colname in preconditions) {
+                precond = as.numeric(!is.na(dat[,colname]))
+                n_ill = sum(precond==1)
+                coefs = coef(summary(lm(dat$GRDBS ~ precond)))
+                df = data.frame(condition=colname,N=n_ill,beta=coefs[2,1],pval=coefs[2,4])
+                tbl = rbind(tbl,df)
+                rm(df,precond,n_ill,coefs)
+        }
+        
+        cat("\n\t pregnancies with the following maternal medical conditions will be excluded from the MFR:\n")
+        print(tbl)
+        cat("\t(beta and pval are estimated as an effect on gestational age) \n")
+        
+        # remove all pregnancies with preconditions from the data
+        sub = dat[,preconditions]
+        if(is.null(ncol(sub))) { # to prevent collapsing the dataframe into vector
+                sub = data.frame(var1=sub,stringsAsFactors = F)
+        }
+        bad_rows = apply(sub,1,function(x) sum(!is.na(x))) #; table(bad_rows); sum(bad_rows>0)
+        
+        
+        #cat("\n\t number of pregnancies with a specific number of maternal medical conditions:\n")
+        #print(table(bad_rows))
+        
+        dat = dat[which(bad_rows==0),]
+        
+        cat("\n\t number of rows selected for exclusion:", sum(bad_rows>0))
+        cat("\n\t number of rows remaining in \"dat\" obj:", nrow(dat))
+
+        generate_year_counts(dat, "matPrecond", F)
+        return(dat)
 }
+
 
 fun_spont1990 = function(dat) {
         
@@ -363,26 +355,26 @@ fun_noPROM = function(dat) {
 cat("PROM deliveries: \n \t exclude deliveries that start with premature rupture of membranes \n\n")
 
 cat( "Exclusion codes based on ICD-08 system (1969-1986):
-\t ^76910  - ruptura praematura membranae fetus")
+\t ^76910  - ruptura praematura membranae fetus \n")
 cat( "Exclusion codes based on ICD-09 system (1987-1997):
-\t ^658B  - för tidig hinnbristning (för tidig fostervattenavgång)
-\t ^658C  - fördröjd förlossning efter spontan eller ospecificerad hinnbristning
-\t ^658D -  fördröjd förlossning efter artificiell hinnsprängning ")
+\t ^658B  - för tidig hinnbristning (för tidig fostervattenavgång) \n")
+#\t ^658C  - fördröjd förlossning efter spontan eller ospecificerad hinnbristning
+#\t ^658D -  fördröjd förlossning efter artificiell hinnsprängning ")
 cat( "Exclusion codes based on ICD-10 system (1997-xxxx):
-\t ^O42  -  PROM 
-\t ^O755 - Fördröjd förlossning efter artificiell hinnsprängning
-\t ^O756 - Fördröjd förlossning efter spontan eller icke specificerad hinnbristning (3cat: A,B,X) ")
+\t ^O42  -  PROM \n")
+#\t ^O755 - Fördröjd förlossning efter artificiell hinnsprängning
+#\t ^O756 - Fördröjd förlossning efter spontan eller icke specificerad hinnbristning (3cat: A,B,X) ")
 
 icd08  = "^76910" #  ruptura praematura membranae fetus
 icd09b = "^658B" #  för tidig hinnbristning (för tidig fostervattenavgång)
-icd09c = "^658C" #  fördröjd förlossning efter spontan eller ospecificerad hinnbristning
-icd09d = "^658D" #  fördröjd förlossning efter artificiell hinnsprängning ")
+#icd09c = "^658C" #  fördröjd förlossning efter spontan eller ospecificerad hinnbristning
+#icd09d = "^658D" #  fördröjd förlossning efter artificiell hinnsprängning ")
 icd10a = "^O42"  # PROM
-icd10b = "^O755" # Fördröjd förlossning efter artificiell hinnsprängning
-icd10c = "^O756" # Fördröjd förlossning efter spontan eller icke specificerad hinnbristning (3cat: A,B,X)
+#icd10b = "^O755" # Fördröjd förlossning efter artificiell hinnsprängning
+#icd10c = "^O756" # Fördröjd förlossning efter spontan eller icke specificerad hinnbristning (3cat: A,B,X)
 
-icd_codes = c(icd08,icd09b,icd09c,icd09d,icd10a,icd10b,icd10c)    
-        
+icd_codes = c(icd08,icd09b,icd10a)    
+#icd_codes = c(icd08,icd09b,icd09c,icd09d,icd10a,icd10b,icd10c) # to strict
 
 tbl = rixs = cnt = NULL # table of effect sizes, exclusion rows, counts per year
         for (i in 1:length(icd_codes)) {
@@ -445,10 +437,11 @@ cat("\n\t IMPORTANT:
 
 
 # dangerous! temporary! is it worth?!
+n_removed = nrow(dat) - length(which(dat$AR>=1987))
 dat = dat[which(dat$AR>=1987),]
 
 cat("\n\t YEAR-REMOVAL STAGE: 
-    \t - in total",length(bad_rows),"rows were removed 
+    \t - in total",length(n_removed),"rows were removed 
     \t - and",nrow(dat),"rows are left remaining \n") 
 
 icd_codes = c("^O40",      # icd10: Abnormally large amount of amniotic fluid
@@ -513,7 +506,7 @@ for (i in 1:nrow(rep)) {
                 rm(rix_tmp)
         }
         # report the discovered matching patterns
-        print(sort(unique(cds)))
+        # print(sort(unique(cds)))
         
         # year-split of incidence (cumulative)
         phe = rep(0,nrow(dat)); phe[unique(rix)]=1
@@ -1028,7 +1021,7 @@ fun_mWghQC = function(dat,duringPregTransf) {
         return(dat)
 }
 
-head(dat)
+
 
 
 fun_mBmiQC = function(dat) {
